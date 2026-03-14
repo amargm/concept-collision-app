@@ -17,6 +17,15 @@ workflows:
           touch settings.gradle
           gradle wrapper --gradle-version 8.3
           cp /tmp/gw/gradle/wrapper/gradle-wrapper.jar $CM_BUILD_DIR/android/gradle/wrapper/
+      - name: Bundle JavaScript
+        script: |
+          mkdir -p android/app/src/main/assets
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res
       - name: Build debug APK
         script: cd android && chmod +x gradlew && ./gradlew assembleDebug
     artifacts:
