@@ -1,0 +1,20 @@
+workflows:
+  android-debug:
+    name: Android Debug Build
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      node: 18
+    scripts:
+      - name: Install dependencies
+        script: npm install
+      - name: Set SDK path
+        script: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+      - name: Generate Gradle wrapper
+        script: |
+          cd android
+          gradle wrapper --gradle-version 8.3
+      - name: Build debug APK
+        script: cd android && chmod +x gradlew && ./gradlew assembleDebug
+    artifacts:
+      - android/app/build/outputs/apk/debug/*.apk
