@@ -1,11 +1,25 @@
 # ─────────────────────────────────────────────────────────
-# REQUIRED Codemagic environment variable (set in UI):
-#   GOOGLE_SERVICES_JSON_BASE64
-#     = base64 of android/app/google-services.json
-#     Run locally: base64 -i android/app/google-services.json | tr -d '\n'
+# Required Codemagic variable groups (configure in UI):
+#
+#   firebase
+#     GOOGLE_SERVICES_JSON_BASE64   base64 of android/app/google-services.json
+#
+#   keystore_credentials
+#     CM_KEYSTORE           base64-encoded .keystore file
+#     CM_KEYSTORE_PASSWORD  keystore password
+#     CM_KEY_ALIAS          key alias
+#     CM_KEY_PASSWORD       key password
+#
+#   app_config
+#     BACKEND_URL           https://concept-collision-api-wxxet2kdkq-el.a.run.app
+#     POSTHOG_KEY           phc_wJju7DzobY6a05lHdoBUm5quTSOj27VnAMvDKsLNhnn
+#     EXPO_TOKEN            token from expo.dev/accounts/<user>/settings/access-tokens
+#                           (required for non-interactive EAS CLI on iOS)
 # ─────────────────────────────────────────────────────────
 
 workflows:
+
+  # ── 1. Android Debug ────────────────────────────────────
   android-debug:
     name: Android Debug APK
     max_build_duration: 60
@@ -43,9 +57,17 @@ workflows:
         script: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
     artifacts:
       - android/app/build/outputs/apk/debug/*.apk
+    publishing:
+      email:
+        recipients:
+          - mugaliamar@gmail.com
+        notify:
+          success: true
+          failure: true
 
+  # ── 2. Android Release (Signed) ─────────────────────────
   android-release:
-    name: Android Release APK
+    name: Android Release APK (Signed)
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
@@ -53,8 +75,11 @@ workflows:
       java: 17
       groups:
         - firebase
+        - keystore_credentials
+        - app_config
       vars:
         PACKAGE_NAME: "com.conceptcollision"
+        KEYSTORE_PATH: "android/app/concept-collision.keystore"
     scripts:
       - name: Install dependencies
         script: npm ci --legacy-peer-deps
@@ -62,13 +87,72 @@ workflows:
         script: echo $GOOGLE_SERVICES_JSON_BASE64 | base64 --decode > android/app/google-services.json
       - name: Set Android SDK path
         script: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+      - name: Decode keystore
+        script: echo $CM_KEYSTORE | base64 --decode > $KEYSTORE_PATH
       - name: Generate Gradle wrapper
         script: |
           mkdir -p /tmp/gw && cd /tmp/gw
           touch settings.gradle
           gradle wrapper --gradle-version 8.3
           cp /tmp/gw/gradle/wrapper/gradle-wrapper.jar $CM_BUILD_DIR/android/gradle/wrapper/
-      - name: Build release APK
-        script: cd android && chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+      - name: Bundle JavaScript
+        script: |
+          mkdir -p android/app/src/main/assets
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file index.js \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res
+      - name: Build signed release APK
+        script: |
+          cd android && chmod +x gradlew && ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$CM_BUILD_DIR/$KEYSTORE_PATH \
+            -Pandroid.injected.signing.store.password=$CM_KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$CM_KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$CM_KEY_PASSWORD
     artifacts:
       - android/app/build/outputs/apk/release/*.apk
+    publishing:
+      email:
+        recipients:
+          - mugaliamar@gmail.com
+        notify:
+          success: true
+          failure: true
+
+  # ── 3. iOS Release (EAS Build) ──────────────────────────
+  ios-release:
+    name: iOS Release IPA (EAS)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      node: 18
+      groups:
+        - app_config
+    scripts:
+      - name: Install dependencies
+        script: npm ci --legacy-peer-deps
+      - name: Install CocoaPods
+        script: |
+          cd ios
+          pod install
+      - name: Build iOS with EAS
+        # EXPO_TOKEN must be set in app_config group for non-interactive auth.
+        # Remove --local to build on EAS servers (IPA appears in EAS dashboard).
+        # Add --local to build on this Codemagic Mac and capture the IPA as artifact below.
+        script: |
+          npx eas-cli build \
+            --platform ios \
+            --profile production \
+            --non-interactive \
+            --local
+    artifacts:
+      - "**/*.ipa"
+    publishing:
+      email:
+        recipients:
+          - mugaliamar@gmail.com
+        notify:
+          success: true
+          failure: true

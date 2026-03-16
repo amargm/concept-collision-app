@@ -13,6 +13,11 @@ local.properties
 # Firebase — never commit, injected by Codemagic via GOOGLE_SERVICES_JSON_BASE64
 android/app/google-services.json
 
+# Environment variables — never commit secrets
+.env
+.env.local
+.env.*.local
+
 # node.js
 node_modules/
 npm-debug.log
@@ -27,6 +32,15 @@ yarn-error.log
 
 # Expo local state
 .expo/
+
+# Firebase emulator artifacts
+firestore-debug.log
+ui-debug.log
+database-debug.log
+pubsub-debug.log
+
+# Test artifacts
+scripts/
 
 # Temporary files
 *.swp
