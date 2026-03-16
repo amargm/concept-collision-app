@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {createContext, useContext, useEffect, useRef, useState} from 'react';
 import {
   Animated,
   StyleSheet,
@@ -20,14 +20,33 @@ import HomeScreen from './src/screens/HomeScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import ResultScreen from './src/screens/ResultScreen';
 
-// Stub screens — replace with real implementations
-import {View as RNView} from 'react-native';
-const DailyScreen = () => <RNView style={{flex:1,backgroundColor:'#0a0a0a'}} />;
-const SettingsScreen = () => <RNView style={{flex:1,backgroundColor:'#0a0a0a'}} />;
-const OnboardingScreen = () => <RNView style={{flex:1,backgroundColor:'#0a0a0a'}} />;
-const AuthScreen = () => <RNView style={{flex:1,backgroundColor:'#0a0a0a'}} />;
-const PaywallScreen = () => <RNView style={{flex:1,backgroundColor:'#0a0a0a'}} />;
-const CollectionDetailScreen = () => <RNView style={{flex:1,backgroundColor:'#0a0a0a'}} />;
+// ── ApiKey compat shim (HomeScreen still imports this until it's rewritten) ───
+interface ApiKeyContextType {
+  apiKey: string | null;
+  saveKey: (key: string) => Promise<void>;
+  clearKey: () => Promise<void>;
+}
+export const ApiKeyContext = createContext<ApiKeyContextType>({
+  apiKey: null,
+  saveKey: async () => {},
+  clearKey: async () => {},
+});
+export const useApiKeyContext = () => useContext(ApiKeyContext);
+
+// ── Stub screens (replace as each is built) ───────────────────────────────────
+const stub = (label: string) => () => (
+  <View style={{flex:1,backgroundColor:'#0a0a0a',alignItems:'center',justifyContent:'center'}}>
+    <Text style={{color:'#555550',fontFamily:'monospace',fontSize:11,letterSpacing:3}}>
+      {label.toUpperCase()}
+    </Text>
+  </View>
+);
+const DailyScreen            = stub('daily');
+const SettingsScreen         = stub('settings');
+const OnboardingScreen       = stub('onboarding');
+const AuthScreen             = stub('auth');
+const PaywallScreen          = stub('paywall');
+const CollectionDetailScreen = stub('collection detail');
 
 // ── Navigator types ───────────────────────────────────────────────────────────
 export type RootStackParamList = {
@@ -53,9 +72,10 @@ const ONBOARDING_KEY = 'onboarding_complete';
 
 // ── Animated loading dots ─────────────────────────────────────────────────────
 function SplashScreen() {
-  const dots = [useRef(new Animated.Value(0)).current,
-                useRef(new Animated.Value(0)).current,
-                useRef(new Animated.Value(0)).current];
+  // Start at 0.4 so dots are visible immediately, then pulse to 1 and back
+  const dots = [useRef(new Animated.Value(0.4)).current,
+                useRef(new Animated.Value(0.4)).current,
+                useRef(new Animated.Value(0.4)).current];
 
   useEffect(() => {
     const anims = dots.map((dot, i) =>
@@ -63,7 +83,7 @@ function SplashScreen() {
         Animated.sequence([
           Animated.delay(i * 200),
           Animated.timing(dot, {toValue: 1, duration: 400, useNativeDriver: true}),
-          Animated.timing(dot, {toValue: 0, duration: 400, useNativeDriver: true}),
+          Animated.timing(dot, {toValue: 0.4, duration: 400, useNativeDriver: true}),
           Animated.delay((2 - i) * 200),
         ]),
       ),
@@ -125,11 +145,9 @@ export default function App() {
     return <SplashScreen />;
   }
 
-  const initialRoute: keyof RootStackParamList = user
-    ? 'Main'
-    : onboardingDone
-      ? 'Auth'
-      : 'Onboarding';
+  // Route unauthenticated users to Auth for now.
+  // Switch back to Onboarding → Auth flow once OnboardingScreen is built.
+  const initialRoute: keyof RootStackParamList = user ? 'Main' : 'Auth';
 
   return (
     <ErrorBoundary>
