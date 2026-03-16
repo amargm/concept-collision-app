@@ -56,8 +56,12 @@ export function useAuth(): AuthHook {
     setLoading(true);
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      const { idToken } = await GoogleSignin.signIn();
-      const credential = auth.GoogleAuthProvider.credential(idToken);
+      const response = await GoogleSignin.signIn();
+      // v11+ returns { type, data } — user cancelled returns type:'cancelled' without throwing
+      if (response.type !== 'success' || !response.data?.idToken) {
+        return;
+      }
+      const credential = auth.GoogleAuthProvider.credential(response.data.idToken);
       const result = await auth().signInWithCredential(credential);
       await ensureUserDocument(result.user);
     } catch (error: any) {
