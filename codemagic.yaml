@@ -1,15 +1,26 @@
+# ─────────────────────────────────────────────────────────
+# REQUIRED Codemagic environment variable (set in UI):
+#   GOOGLE_SERVICES_JSON_BASE64
+#     = base64 of android/app/google-services.json
+#     Run locally: base64 -i android/app/google-services.json | tr -d '\n'
+# ─────────────────────────────────────────────────────────
+
 workflows:
   android-debug:
-    name: Android Debug Build
+    name: Android Debug APK
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
       node: 18
       java: 17
+      vars:
+        PACKAGE_NAME: "com.conceptcollision"
     scripts:
       - name: Install dependencies
-        script: npm install
-      - name: Set SDK path
+        script: npm ci
+      - name: Place google-services.json
+        script: echo $GOOGLE_SERVICES_JSON_BASE64 | base64 --decode > android/app/google-services.json
+      - name: Set Android SDK path
         script: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
       - name: Generate Gradle wrapper
         script: |
@@ -27,6 +38,33 @@ workflows:
             --bundle-output android/app/src/main/assets/index.android.bundle \
             --assets-dest android/app/src/main/res
       - name: Build debug APK
-        script: cd android && chmod +x gradlew && ./gradlew assembleDebug
+        script: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
     artifacts:
       - android/app/build/outputs/apk/debug/*.apk
+
+  android-release:
+    name: Android Release APK
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      node: 18
+      java: 17
+      vars:
+        PACKAGE_NAME: "com.conceptcollision"
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+      - name: Place google-services.json
+        script: echo $GOOGLE_SERVICES_JSON_BASE64 | base64 --decode > android/app/google-services.json
+      - name: Set Android SDK path
+        script: echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
+      - name: Generate Gradle wrapper
+        script: |
+          mkdir -p /tmp/gw && cd /tmp/gw
+          touch settings.gradle
+          gradle wrapper --gradle-version 8.3
+          cp /tmp/gw/gradle/wrapper/gradle-wrapper.jar $CM_BUILD_DIR/android/gradle/wrapper/
+      - name: Build release APK
+        script: cd android && chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+    artifacts:
+      - android/app/build/outputs/apk/release/*.apk
