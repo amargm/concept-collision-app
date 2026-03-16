@@ -49,6 +49,8 @@ Rules:
 export const GEMINI_ENDPOINT =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
+export const BACKEND_URL = 'https://concept-collision-api-wxxet2kdkq-el.a.run.app';
+
 export const STORAGE_KEYS = {
   apiKey: 'gemini_api_key',
   history: 'collision_history',

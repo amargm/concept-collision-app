@@ -6,30 +6,64 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  ActivityIndicator,
+  Animated,
   StatusBar,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {COLORS, EXAMPLE_CHIPS} from '../utils/constants';
 import {useCollision} from '../hooks/useCollision';
 import {useHistory} from '../hooks/useHistory';
-import {useApiKeyContext} from '../../App';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
+// 3 animated dots + label
+function LoadingDots() {
+  const dots = [useRef(new Animated.Value(0.4)).current,
+                useRef(new Animated.Value(0.4)).current,
+                useRef(new Animated.Value(0.4)).current];
+  React.useEffect(() => {
+    const anims = dots.map((d, i) =>
+      Animated.loop(Animated.sequence([
+        Animated.delay(i * 180),
+        Animated.timing(d, {toValue: 1, duration: 350, useNativeDriver: true}),
+        Animated.timing(d, {toValue: 0.4, duration: 350, useNativeDriver: true}),
+        Animated.delay((2 - i) * 180),
+      ])),
+    );
+    anims.forEach(a => a.start());
+    return () => anims.forEach(a => a.stop());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <View style={loadingStyles.row}>
+      <View style={loadingStyles.dotsInner}>
+        {dots.map((d, i) => (
+          <Animated.View key={i} style={[loadingStyles.dot, {opacity: d}]} />
+        ))}
+      </View>
+      <Text style={loadingStyles.label}>SCANNING DOMAINS...</Text>
+    </View>
+  );
+}
+const loadingStyles = StyleSheet.create({
+  row: {alignItems: 'center', paddingVertical: 18},
+  dotsInner: {flexDirection: 'row', gap: 8, marginBottom: 10},
+  dot: {width: 8, height: 8, backgroundColor: '#c8f064'},
+  label: {fontFamily: 'monospace', fontSize: 9, letterSpacing: 3, color: '#c8f064'},
+});
+
 export default function HomeScreen({navigation}: Props) {
   const [problem, setProblem] = useState('');
   const [focused, setFocused] = useState(false);
-  const {collide, loading, error} = useCollision();
+  const {collide, loading, error, limitExceeded} = useCollision();
   const {add} = useHistory();
-  const {apiKey} = useApiKeyContext();
   const inputRef = useRef<TextInput>(null);
 
   const handleCollide = async () => {
-    if (!problem.trim() || !apiKey) return;
-    const result = await collide(problem.trim(), apiKey);
+    if (!problem.trim()) return;
+    const result = await collide(problem.trim(), 'core');
     if (result) {
       await add(problem.trim(), result);
       navigation.navigate('Result', {problem: problem.trim(), result});
@@ -84,23 +118,26 @@ export default function HomeScreen({navigation}: Props) {
 
         {/* Collide button */}
         {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator color={COLORS.accent} size="small" />
-            <Text style={styles.loadingText}>SCANNING DOMAINS...</Text>
-          </View>
+          <LoadingDots />
         ) : (
           <TouchableOpacity
             style={[
               styles.collideBtn,
-              (!problem.trim() || !apiKey) && styles.collideBtnDisabled,
+              !problem.trim() && styles.collideBtnDisabled,
             ]}
             onPress={handleCollide}
-            disabled={!problem.trim() || !apiKey}>
+            disabled={!problem.trim()}>
             <Text style={styles.collideBtnText}>COLLIDE →</Text>
           </TouchableOpacity>
         )}
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {limitExceeded ? (
+          <Text style={styles.errorText}>
+            Monthly limit reached. Upgrade to continue.
+          </Text>
+        ) : error ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : null}
 
         {/* Example chips */}
         <Text style={[styles.label, {marginTop: 30}]}>EXAMPLES</Text>
@@ -156,7 +193,7 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     fontSize: 9,
     letterSpacing: 3,
-    color: COLORS.muted,
+    color: COLORS.mutedLight,
     marginTop: 4,
   },
   headerButtons: {
@@ -213,19 +250,6 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
     color: COLORS.background,
     fontWeight: '700',
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    gap: 10,
-  },
-  loadingText: {
-    fontFamily: 'monospace',
-    fontSize: 11,
-    letterSpacing: 2,
-    color: COLORS.accent,
   },
   errorText: {
     fontFamily: 'monospace',
