@@ -13,6 +13,8 @@ workflows:
     environment:
       node: 18
       java: 17
+      groups:
+        - firebase
       vars:
         PACKAGE_NAME: "com.conceptcollision"
     scripts:
@@ -49,6 +51,8 @@ workflows:
     environment:
       node: 18
       java: 17
+      groups:
+        - firebase
       vars:
         PACKAGE_NAME: "com.conceptcollision"
     scripts:
