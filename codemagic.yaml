@@ -19,7 +19,7 @@ workflows:
         PACKAGE_NAME: "com.conceptcollision"
     scripts:
       - name: Install dependencies
-        script: npm ci
+        script: npm ci --legacy-peer-deps
       - name: Place google-services.json
         script: echo $GOOGLE_SERVICES_JSON_BASE64 | base64 --decode > android/app/google-services.json
       - name: Set Android SDK path
@@ -57,7 +57,7 @@ workflows:
         PACKAGE_NAME: "com.conceptcollision"
     scripts:
       - name: Install dependencies
-        script: npm ci
+        script: npm ci --legacy-peer-deps
       - name: Place google-services.json
         script: echo $GOOGLE_SERVICES_JSON_BASE64 | base64 --decode > android/app/google-services.json
       - name: Set Android SDK path
