@@ -205,10 +205,4 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 2,
   },
-  // legacy — kept so HomeScreen's useApiKeyContext import doesn't break at runtime
-  // remove once HomeScreen is updated to use useAuth
-
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
 });
