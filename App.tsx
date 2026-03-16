@@ -19,6 +19,7 @@ import ErrorBoundary from './src/components/ErrorBoundary';
 import HomeScreen from './src/screens/HomeScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
 import ResultScreen from './src/screens/ResultScreen';
+import OnboardingScreen from './src/screens/OnboardingScreen';
 
 // ── ApiKey compat shim (HomeScreen still imports this until it's rewritten) ───
 interface ApiKeyContextType {
@@ -43,7 +44,6 @@ const stub = (label: string) => () => (
 );
 const DailyScreen            = stub('daily');
 const SettingsScreen         = stub('settings');
-const OnboardingScreen       = stub('onboarding');
 const AuthScreen             = stub('auth');
 const PaywallScreen          = stub('paywall');
 const CollectionDetailScreen = stub('collection detail');
@@ -145,9 +145,11 @@ export default function App() {
     return <SplashScreen />;
   }
 
-  // Route unauthenticated users to Auth for now.
-  // Switch back to Onboarding → Auth flow once OnboardingScreen is built.
-  const initialRoute: keyof RootStackParamList = user ? 'Main' : 'Auth';
+  const initialRoute: keyof RootStackParamList = user
+    ? 'Main'
+    : onboardingDone
+      ? 'Auth'
+      : 'Onboarding';
 
   return (
     <ErrorBoundary>
