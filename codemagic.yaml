@@ -53,6 +53,8 @@ workflows:
             --entry-file index.js \
             --bundle-output android/app/src/main/assets/index.android.bundle \
             --assets-dest android/app/src/main/res
+      - name: Print debug keystore SHA-1
+        script: keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android 2>/dev/null | grep -E "SHA1|SHA256"
       - name: Build debug APK
         script: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
     artifacts:
