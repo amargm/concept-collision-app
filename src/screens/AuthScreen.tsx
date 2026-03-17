@@ -11,6 +11,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../../App';
 import {useAuth} from '../hooks/useAuth';
+import {auth} from '../services/firebase';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Auth'>;
 
@@ -65,10 +66,14 @@ export default function AuthScreen({navigation}: Props) {
     setSigningIn(true);
     try {
       await signIn();
-      // navigation handled by the useEffect above once user is set
+      // signIn() resolves after signInWithCredential succeeds.
+      // onAuthStateChanged fires → user state updates → useEffect navigates.
+      // As a fallback, also navigate directly if auth().currentUser is set.
+      if (auth().currentUser) {
+        navigation.replace('Main');
+      }
     } catch (e: any) {
       const msg: string = e?.message ?? 'Sign-in failed. Try again.';
-      // Surface friendly messages; strip internal noise
       setError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
     } finally {
       setSigningIn(false);

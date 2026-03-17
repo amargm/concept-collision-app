@@ -45,7 +45,11 @@ export function useAuth(): AuthHook {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = auth().onAuthStateChanged(async (firebaseUser) => {
+    const unsubscribe = auth().onAuthStateChanged((firebaseUser) => {
+      if (firebaseUser) {
+        // Fire-and-forget: don't block auth state update on Firestore
+        ensureUserDocument(firebaseUser).catch(() => {});
+      }
       setUser(firebaseUser);
       setLoading(false);
     });
@@ -62,8 +66,8 @@ export function useAuth(): AuthHook {
         return;
       }
       const credential = auth.GoogleAuthProvider.credential(response.data.idToken);
-      const result = await auth().signInWithCredential(credential);
-      await ensureUserDocument(result.user);
+      await auth().signInWithCredential(credential);
+      // onAuthStateChanged will fire and set user — navigation handled there
     } catch (error: any) {
       if (
         error.code !== statusCodes.SIGN_IN_CANCELLED &&
