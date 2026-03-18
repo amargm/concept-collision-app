@@ -24,6 +24,8 @@ import {auth, firestore} from '../services/firebase';
 import type {RootStackParamList} from '../../App';
 import type {CollisionResult, Collision} from '../hooks/useCollision';
 import StagePicker from '../components/StagePicker';
+import ClosingSheet from '../components/ClosingSheet';
+import type {Stage} from '../components/StagePicker';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type RouteP  = RouteProp<RootStackParamList, 'ProblemDetail'>;
@@ -45,8 +47,7 @@ const C = {
 };
 
 // ── Stage config ──────────────────────────────────────────────────────────────
-type Stage = 'waiting' | 'thinking' | 'resting' | 'clear' | 'let go';
-
+// ── Stage config (Stage type imported from StagePicker) ─────────────────────
 const STAGE_COLOR: Record<Stage, string> = {
   waiting:  '#555550',
   thinking: '#c8f064',
@@ -345,11 +346,13 @@ export default function ProblemDetailScreen() {
   const [events, setEvents]               = useState<StageEventDoc[]>([]);
   const [loadingProblem, setLoadingProblem]       = useState(true);
   const [loadingCollisions, setLoadingCollisions] = useState(false);
-  const [addingNote, setAddingNote]             = useState(false);
-  const [noteText, setNoteText]                 = useState('');
-  const [savingNote, setSavingNote]             = useState(false);
-  const [stagePickerVisible, setStagePickerVisible] = useState(false);
-  const [stagePickerHowEnd,  setStagePickerHowEnd]  = useState(false);
+  const [addingNote, setAddingNote]                   = useState(false);
+  const [noteText, setNoteText]                       = useState('');
+  const [savingNote, setSavingNote]                   = useState(false);
+  const [stagePickerVisible, setStagePickerVisible]   = useState(false);
+  const [closingSheetVisible, setClosingSheetVisible] = useState(false);
+  const [closingTargetStage, setClosingTargetStage]   = useState<Stage>('clear');
+  const savedConfirmOpacity = useRef(new Animated.Value(0)).current;
 
   const noteRef = useRef<TextInput>(null);
 
@@ -527,13 +530,25 @@ export default function ProblemDetailScreen() {
   );
 
   const handlePickStage = useCallback(() => {
-    setStagePickerHowEnd(false);
     setStagePickerVisible(true);
   }, []);
 
+  const handleSelectClosingStage = useCallback((stage: Stage) => {
+    setClosingTargetStage(stage);
+    setClosingSheetVisible(true);
+  }, []);
+
   const handleHowDidEnd = useCallback(() => {
-    setStagePickerHowEnd(true);
     setStagePickerVisible(true);
+  }, []);
+
+  const handleSaved = useCallback(() => {
+    Animated.sequence([
+      Animated.timing(savedConfirmOpacity, {toValue: 1, duration: 200, useNativeDriver: true}),
+      Animated.delay(2000),
+      Animated.timing(savedConfirmOpacity, {toValue: 0, duration: 300, useNativeDriver: true}),
+    ]).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSaveNote = useCallback(async () => {
@@ -786,8 +801,24 @@ export default function ProblemDetailScreen() {
         currentStage={problem.stage}
         onClose={() => setStagePickerVisible(false)}
         onStageChange={changeStage}
-        startOnHowEnd={stagePickerHowEnd}
+        onSelectClosingStage={handleSelectClosingStage}
       />
+
+      {/* ── Closing sheet ── */}
+      <ClosingSheet
+        visible={closingSheetVisible}
+        targetStage={closingTargetStage}
+        problemId={problemId}
+        onClose={() => setClosingSheetVisible(false)}
+        onSaved={handleSaved}
+      />
+
+      {/* ── Saved confirmation ── */}
+      <Animated.View
+        style={[s.savedConfirm, {opacity: savedConfirmOpacity}]}
+        pointerEvents="none">
+        <Text style={s.savedConfirmText}>Saved.</Text>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -1124,5 +1155,25 @@ const s = StyleSheet.create({
     fontSize:      9,
     letterSpacing: 2,
     color:         C.muted,
+  },
+
+  // ── Saved confirmation ──
+  savedConfirm: {
+    position:   'absolute' as const,
+    bottom:     40,
+    left:       0,
+    right:      0,
+    alignItems: 'center' as const,
+  },
+  savedConfirmText: {
+    fontFamily:      'monospace',
+    fontSize:        11,
+    letterSpacing:   2,
+    color:           '#c8f064',
+    backgroundColor: '#0a0a0a',
+    paddingHorizontal: 16,
+    paddingVertical:   6,
+    borderWidth:     1,
+    borderColor:     '#222222',
   },
 });

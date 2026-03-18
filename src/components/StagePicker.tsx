@@ -1,7 +1,7 @@
 /**
  * StagePicker — bottom sheet for moving a problem through stages.
- * Two views: 'picker' (all 5 stages) and 'howEnd' (CLEAR + LET GO only).
- * Selecting CLEAR or LET GO from the picker view transitions to howEnd.
+ * CLEAR and LET GO emit onSelectClosingStage instead of committing directly,
+ * allowing the parent to open the ClosingSheet.
  */
 import React, {useEffect, useRef, useState} from 'react';
 import {
@@ -41,18 +41,17 @@ const STAGE_DESC: Record<Stage, string> = {
   'let go': 'No longer relevant',
 };
 
-const ALL_STAGES:     Stage[] = ['waiting', 'thinking', 'resting', 'clear', 'let go'];
-const CLOSING_STAGES: Stage[] = ['clear', 'let go'];
+const ALL_STAGES: Stage[] = ['waiting', 'thinking', 'resting', 'clear', 'let go'];
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
-  visible:        boolean;
-  currentStage:   Stage;
-  onClose:        () => void;
-  onStageChange:  (stage: Stage) => Promise<void>;
-  startOnHowEnd?: boolean;
+  visible:                boolean;
+  currentStage:           Stage;
+  onClose:                () => void;
+  onStageChange:          (stage: Stage) => Promise<void>;
+  onSelectClosingStage:   (stage: Stage) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -61,19 +60,17 @@ export default function StagePicker({
   currentStage,
   onClose,
   onStageChange,
-  startOnHowEnd = false,
+  onSelectClosingStage,
 }: Props) {
-  const [view,   setView]   = useState<'picker' | 'howEnd'>(startOnHowEnd ? 'howEnd' : 'picker');
   const [saving, setSaving] = useState(false);
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
 
-  // Reset view whenever the sheet opens
+  // Reset state whenever the sheet opens
   useEffect(() => {
     if (visible) {
-      setView(startOnHowEnd ? 'howEnd' : 'picker');
       setSaving(false);
     }
-  }, [visible, startOnHowEnd]);
+  }, [visible]);
 
   // Slide animation
   useEffect(() => {
@@ -95,9 +92,10 @@ export default function StagePicker({
   }, [visible]);
 
   const handleSelect = async (stage: Stage) => {
-    // In picker view, CLEAR / LET GO → transition to howEnd instead of committing
-    if (view === 'picker' && (stage === 'clear' || stage === 'let go')) {
-      setView('howEnd');
+    // CLEAR / LET GO → hand off to ClosingSheet via parent
+    if (stage === 'clear' || stage === 'let go') {
+      onClose();
+      onSelectClosingStage(stage);
       return;
     }
     if (saving) {return;}
@@ -109,9 +107,6 @@ export default function StagePicker({
       setSaving(false);
     }
   };
-
-  const stages = view === 'howEnd' ? CLOSING_STAGES : ALL_STAGES;
-  const title  = view === 'howEnd' ? 'HOW DID THIS END?' : 'MOVE TO';
 
   return (
     <Modal
@@ -135,18 +130,11 @@ export default function StagePicker({
           <View style={s.handle} />
         </View>
 
-        {/* Back arrow — only shown on howEnd view when it wasn't opened directly */}
-        {view === 'howEnd' && !startOnHowEnd && (
-          <TouchableOpacity style={s.backRow} onPress={() => setView('picker')}>
-            <Text style={s.backText}>← BACK</Text>
-          </TouchableOpacity>
-        )}
-
         {/* Title */}
-        <Text style={s.sheetTitle}>{title}</Text>
+        <Text style={s.sheetTitle}>MOVE TO</Text>
 
         {/* Stage rows */}
-        {stages.map(stage => {
+        {ALL_STAGES.map(stage => {
           const color      = STAGE_COLOR[stage];
           const isCurrent  = stage === currentStage;
           return (
@@ -203,18 +191,6 @@ const s = StyleSheet.create({
     width:           32,
     height:          3,
     backgroundColor: '#333333',
-  },
-
-  // Back nav (howEnd only)
-  backRow: {
-    paddingHorizontal: 24,
-    paddingVertical:   8,
-  },
-  backText: {
-    fontFamily:    'monospace',
-    fontSize:      9,
-    letterSpacing: 2,
-    color:         '#888880',
   },
 
   // Sheet title
