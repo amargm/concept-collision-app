@@ -22,6 +22,7 @@ import ResultScreen from './src/screens/ResultScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import CollisionMapScreen from './src/screens/CollisionMapScreen';
 
 // ── ApiKey compat shim (HomeScreen still imports this until it's rewritten) ───
 interface ApiKeyContextType {
@@ -62,6 +63,7 @@ type MainTabParamList = {
   Home: undefined;
   Daily: undefined;
   History: undefined;
+  Map: undefined;
   Settings: undefined;
 };
 
@@ -122,6 +124,7 @@ function MainTabs() {
       <Tab.Screen name="Home"     component={HomeScreen} />
       <Tab.Screen name="Daily"    component={DailyScreen} />
       <Tab.Screen name="History"  component={HistoryScreen} />
+      <Tab.Screen name="Map"      component={CollisionMapScreen} />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );
