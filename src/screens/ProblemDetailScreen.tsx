@@ -4,8 +4,6 @@
  */
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
-  ActionSheetIOS,
-  Alert,
   Animated,
   FlatList,
   KeyboardAvoidingView,
@@ -25,6 +23,7 @@ import type {RouteProp} from '@react-navigation/native';
 import {auth, firestore} from '../services/firebase';
 import type {RootStackParamList} from '../../App';
 import type {CollisionResult, Collision} from '../hooks/useCollision';
+import StagePicker from '../components/StagePicker';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 type RouteP  = RouteProp<RootStackParamList, 'ProblemDetail'>;
@@ -346,9 +345,11 @@ export default function ProblemDetailScreen() {
   const [events, setEvents]               = useState<StageEventDoc[]>([]);
   const [loadingProblem, setLoadingProblem]       = useState(true);
   const [loadingCollisions, setLoadingCollisions] = useState(false);
-  const [addingNote, setAddingNote]       = useState(false);
-  const [noteText, setNoteText]           = useState('');
-  const [savingNote, setSavingNote]       = useState(false);
+  const [addingNote, setAddingNote]             = useState(false);
+  const [noteText, setNoteText]                 = useState('');
+  const [savingNote, setSavingNote]             = useState(false);
+  const [stagePickerVisible, setStagePickerVisible] = useState(false);
+  const [stagePickerHowEnd,  setStagePickerHowEnd]  = useState(false);
 
   const noteRef = useRef<TextInput>(null);
 
@@ -506,7 +507,16 @@ export default function ProblemDetailScreen() {
         .doc(user.uid)
         .collection('items')
         .doc(problemId);
-      await ref.update({stage: newStage});
+      // Write new stage + append to stageHistory array (client timestamp — server
+      // timestamps cannot be nested inside arrayUnion values)
+      await ref.update({
+        stage: newStage,
+        stageHistory: firestore.FieldValue.arrayUnion({
+          from: problem.stage,
+          to:   newStage,
+          at:   new Date().toISOString(),
+        }),
+      });
       await ref.collection('events').add({
         type:      'stage_change',
         to:        newStage,
@@ -517,39 +527,14 @@ export default function ProblemDetailScreen() {
   );
 
   const handlePickStage = useCallback(() => {
-    const opts = STAGES.map(s => STAGE_LABELS[s]);
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {options: ['Cancel', ...opts], cancelButtonIndex: 0, title: 'Change Stage'},
-        idx => {if (idx > 0) {changeStage(STAGES[idx - 1]);}},
-      );
-    } else {
-      Alert.alert('Change Stage', undefined, [
-        {text: 'Cancel', style: 'cancel'},
-        ...STAGES.map(s => ({text: STAGE_LABELS[s], onPress: () => changeStage(s)})),
-      ]);
-    }
-  }, [changeStage]);
+    setStagePickerHowEnd(false);
+    setStagePickerVisible(true);
+  }, []);
 
   const handleHowDidEnd = useCallback(() => {
-    const ending: Stage[] = ['clear', 'let go'];
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Cancel', ...ending.map(s => STAGE_LABELS[s])],
-          cancelButtonIndex: 0,
-          title: 'How did this end?',
-          message: 'Move this problem to a closing stage',
-        },
-        idx => {if (idx > 0) {changeStage(ending[idx - 1]);}},
-      );
-    } else {
-      Alert.alert('How did this end?', 'Move this problem to a closing stage', [
-        {text: 'Cancel', style: 'cancel'},
-        ...ending.map(s => ({text: STAGE_LABELS[s], onPress: () => changeStage(s)})),
-      ]);
-    }
-  }, [changeStage]);
+    setStagePickerHowEnd(true);
+    setStagePickerVisible(true);
+  }, []);
 
   const handleSaveNote = useCallback(async () => {
     if (!noteText.trim() || savingNote) {return;}
@@ -794,6 +779,15 @@ export default function ProblemDetailScreen() {
           keyboardShouldPersistTaps="handled"
         />
       </KeyboardAvoidingView>
+
+      {/* ── Stage picker bottom sheet ── */}
+      <StagePicker
+        visible={stagePickerVisible}
+        currentStage={problem.stage}
+        onClose={() => setStagePickerVisible(false)}
+        onStageChange={changeStage}
+        startOnHowEnd={stagePickerHowEnd}
+      />
     </SafeAreaView>
   );
 }
