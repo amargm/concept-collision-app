@@ -55,7 +55,7 @@ export type RootStackParamList = {
   Onboarding: undefined;
   Auth: undefined;
   Main: undefined;
-  Result: {problem: string; result: CollisionResult};
+  Result: {problem: string; result: CollisionResult; collisionId?: string};
   Paywall: undefined;
   CollectionDetail: {collectionId: string; name: string};
 };

@@ -12,6 +12,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {COLORS, EXAMPLE_CHIPS} from '../utils/constants';
 import {useCollision} from '../hooks/useCollision';
+import {auth, firestore} from '../services/firebase';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../../App';
 
@@ -56,14 +57,52 @@ const loadingStyles = StyleSheet.create({
 export default function HomeScreen({navigation}: Props) {
   const [problem, setProblem] = useState('');
   const [focused, setFocused] = useState(false);
+  const [savingWorkspace, setSavingWorkspace] = useState(false);
+  const [workspaceSaved, setWorkspaceSaved] = useState(false);
+  const saveConfirmOpacity = useRef(new Animated.Value(0)).current;
   const {collide, loading, error, limitExceeded} = useCollision();
   const inputRef = useRef<TextInput>(null);
 
   const handleCollide = async () => {
     if (!problem.trim()) return;
-    const result = await collide(problem.trim(), 'core');
-    if (result) {
-      navigation.navigate('Result', {problem: problem.trim(), result});
+    const res = await collide(problem.trim(), 'core');
+    if (res) {
+      navigation.navigate('Result', {problem: problem.trim(), result: res.result, collisionId: res.id});
+    }
+  };
+
+  const handleSaveToWorkspace = async () => {
+    const trimmed = problem.trim();
+    if (!trimmed || savingWorkspace) return;
+    const user = auth().currentUser;
+    if (!user) return;
+    setSavingWorkspace(true);
+    try {
+      await firestore()
+        .collection('problems')
+        .doc(user.uid)
+        .collection('items')
+        .add({
+          problem: trimmed,
+          stage: 'waiting',
+          source: 'queued',
+          collisionCount: 0,
+          collisionIds: [],
+          domains: [],
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        });
+      setProblem('');
+      // Fade in confirmation then fade out
+      Animated.sequence([
+        Animated.timing(saveConfirmOpacity, {toValue: 1, duration: 200, useNativeDriver: true}),
+        Animated.delay(1500),
+        Animated.timing(saveConfirmOpacity, {toValue: 0, duration: 300, useNativeDriver: true}),
+      ]).start(() => setWorkspaceSaved(false));
+      setWorkspaceSaved(true);
+    } catch {
+      // silently ignore
+    } finally {
+      setSavingWorkspace(false);
     }
   };
 
@@ -122,6 +161,21 @@ export default function HomeScreen({navigation}: Props) {
             <Text style={styles.collideBtnText}>COLLIDE →</Text>
           </TouchableOpacity>
         )}
+
+        {/* Save to Workspace */}
+        {!loading && problem.trim().length > 0 && (
+          <TouchableOpacity
+            onPress={handleSaveToWorkspace}
+            disabled={savingWorkspace}
+            style={styles.saveWorkspaceBtn}>
+            <Text style={styles.saveWorkspaceBtnText}>SAVE TO WORKSPACE</Text>
+          </TouchableOpacity>
+        )}
+        <Animated.Text
+          style={[styles.saveConfirmText, {opacity: saveConfirmOpacity}]}
+          pointerEvents="none">
+          SAVED TO WORKSPACE
+        </Animated.Text>
 
         {limitExceeded ? (
           <Text style={styles.errorText}>
@@ -197,6 +251,26 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     paddingHorizontal: 10,
     paddingVertical: 8,
+  },
+  saveWorkspaceBtn: {
+    alignSelf: 'center',
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  saveWorkspaceBtnText: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 3,
+    color: '#64c8f0',
+    textTransform: 'uppercase',
+  },
+  saveConfirmText: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 3,
+    color: '#64c8f0',
+    textAlign: 'center',
+    marginTop: 4,
   },
   headerBtnText: {
     fontFamily: 'monospace',

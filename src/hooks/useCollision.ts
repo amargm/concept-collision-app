@@ -113,7 +113,7 @@ export function useCollision() {
         throw new Error('Unexpected response shape from server');
       }
 
-      return data;
+      return { id: body.id ?? '', result: data };
     } catch (e: any) {
       const msg: string = e?.message ?? 'Something went wrong';
       setError(msg.length > 150 ? msg.slice(0, 150) + '…' : msg);
@@ -123,5 +123,10 @@ export function useCollision() {
     }
   };
 
-  return {collide, loading, error, limitExceeded};
+  return {collide, loading, error, limitExceeded} as {
+    collide: (problem: string, mode: CollisionMode, extra?: Record<string, any>) => Promise<{id: string; result: CollisionResult} | null>;
+    loading: boolean;
+    error: string | null;
+    limitExceeded: boolean;
+  };
 }

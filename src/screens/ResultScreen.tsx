@@ -270,9 +270,42 @@ function CollisionCard({
 
 // ── Result screen ─────────────────────────────────────────────────────────────
 export default function ResultScreen({navigation, route}: Props) {
-  const {problem, result} = route.params;
+  const {problem, result, collisionId} = route.params;
   const [userPlan, setUserPlan] = useState<'free' | 'pro' | null>(null);
   const [synthShareError, setSynthShareError] = useState<string | null>(null);
+  const [savingWorkspace, setSavingWorkspace] = useState(false);
+  const [workspaceSavedOpacity] = useState(() => new Animated.Value(0));
+
+  const handleSaveProblemToWorkspace = async () => {
+    if (savingWorkspace) return;
+    const user = auth().currentUser;
+    if (!user) return;
+    setSavingWorkspace(true);
+    try {
+      await firestore()
+        .collection('problems')
+        .doc(user.uid)
+        .collection('items')
+        .add({
+          problem: problem.trim(),
+          stage: 'resting',
+          source: 'elevated',
+          collisionCount: 1,
+          collisionIds: collisionId ? [collisionId] : [],
+          domains: result.collisions.map(c => c.domain),
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        });
+      Animated.sequence([
+        Animated.timing(workspaceSavedOpacity, {toValue: 1, duration: 200, useNativeDriver: true}),
+        Animated.delay(1800),
+        Animated.timing(workspaceSavedOpacity, {toValue: 0, duration: 300, useNativeDriver: true}),
+      ]).start();
+    } catch {
+      // silently ignore
+    } finally {
+      setSavingWorkspace(false);
+    }
+  };
 
   // One share ref per top-level collision card + one for synthesis
   const cardRefs = useRef<React.RefObject<View>[]>(
@@ -409,6 +442,21 @@ export default function ResultScreen({navigation, route}: Props) {
           onPress={() => navigation.popToTop()}>
           <Text style={cs.newBtnText}>NEW COLLISION →</Text>
         </TouchableOpacity>
+
+        {/* Save problem to workspace */}
+        <TouchableOpacity
+          onPress={handleSaveProblemToWorkspace}
+          disabled={savingWorkspace}
+          style={cs.saveWorkspaceBtn}>
+          <Text style={cs.saveWorkspaceBtnText}>
+            {savingWorkspace ? 'SAVING...' : 'SAVE PROBLEM TO WORKSPACE'}
+          </Text>
+        </TouchableOpacity>
+        <Animated.Text
+          style={[cs.saveWorkspaceConfirm, {opacity: workspaceSavedOpacity}]}
+          pointerEvents="none">
+          SAVED TO WORKSPACE
+        </Animated.Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -620,5 +668,25 @@ const cs = StyleSheet.create({
     letterSpacing: 3,
     color: COLORS.background,
     fontWeight: '700',
+  },
+  saveWorkspaceBtn: {
+    alignSelf: 'center',
+    paddingVertical: 12,
+    marginTop: 6,
+  },
+  saveWorkspaceBtnText: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 3,
+    color: '#64c8f0',
+    textTransform: 'uppercase',
+  },
+  saveWorkspaceConfirm: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 3,
+    color: '#64c8f0',
+    textAlign: 'center',
+    marginBottom: 24,
   },
 });
