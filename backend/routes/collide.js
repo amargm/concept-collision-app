@@ -102,6 +102,29 @@ Rules:
 - One collision per domain specified by user
 - Stay strictly within the domains given
 - The bridge must be genuinely illuminating`,
+
+  deeper: `You are a cross-domain structural pattern engine going deeper into a single domain. The user wants to explore how 3 distinct sub-disciplines, historical movements, periods, or schools of thought WITHIN one specific domain have each addressed the same structural problem differently.
+
+Respond ONLY with valid JSON using this exact structure:
+{
+  "structural_essence": "Restate the structural essence in one crisp sentence",
+  "collisions": [
+    {
+      "domain": "Specific sub-field, period, or movement within the given domain (e.g. 'Byzantine Military Logistics' not just 'Military')",
+      "title": "The analogous problem within that sub-field",
+      "how_they_solved_it": "2-3 sentences. Concrete, specific — name figures, periods, mechanisms.",
+      "bridge": "1-2 sentences. The structural insight that maps back to the original problem."
+    }
+  ],
+  "synthesis": "One insight that emerges from going deeper into this domain."
+}
+
+Rules:
+- Exactly 3 collisions
+- All 3 must be meaningfully distinct sub-aspects within the given domain
+- Be highly specific (e.g. 'Byzantine military logistics' not 'European history')
+- Never use the parent domain name verbatim as a sub-domain name
+- The bridge must be genuinely illuminating, not generic`,
 };
 
 // ── POST /collide ─────────────────────────────────────────────────────────────
@@ -114,13 +137,17 @@ router.post('/', verifyAuth, async (req, res) => {
     return res.status(400).json({ error: 'problem_required' });
   }
 
-  const validModes = ['core', 'learning', 'narrative', 'chain'];
+  const validModes = ['core', 'learning', 'narrative', 'chain', 'deeper'];
   if (!validModes.includes(mode)) {
     return res.status(400).json({ error: 'invalid_mode' });
   }
 
   if (mode === 'chain' && (!domain || !structuralEssence)) {
     return res.status(400).json({ error: 'chain_mode_requires_domain_and_structuralEssence' });
+  }
+
+  if (mode === 'deeper' && (!domain || typeof domain !== 'string' || !structuralEssence)) {
+    return res.status(400).json({ error: 'deeper_mode_requires_domain_and_structuralEssence' });
   }
 
   // ── Rate limit check ───────────────────────────────────────────────────────
@@ -137,12 +164,20 @@ router.post('/', verifyAuth, async (req, res) => {
     return res.status(429).json({ error: 'limit_exceeded' });
   }
 
+  if (mode === 'deeper' && userData.plan !== 'pro') {
+    return res.status(403).json({ error: 'pro_required' });
+  }
+
   // ── Build prompt ───────────────────────────────────────────────────────────
   let systemPrompt = PROMPTS[mode];
   let userMessage = problem.trim();
 
   if (mode === 'chain') {
     userMessage = `Structural essence: ${structuralEssence}\n\nDomains to explore: ${Array.isArray(domain) ? domain.join(', ') : domain}\n\nOriginal problem: ${problem.trim()}`;
+  }
+
+  if (mode === 'deeper') {
+    userMessage = `Structural essence: ${structuralEssence}\n\nDomain to explore deeply: ${domain}\n\nOriginal problem: ${problem.trim()}`;
   }
 
   // ── Call Gemini ────────────────────────────────────────────────────────────

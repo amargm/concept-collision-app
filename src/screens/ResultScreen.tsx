@@ -1,17 +1,517 @@
-import React from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
+  Animated,
   ScrollView,
-  StyleSheet,
   Share,
   StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {COLORS, CARD_COLORS} from '../utils/constants';
+import {BACKEND_URL, CARD_COLORS, COLORS} from '../utils/constants';
+import {auth, firestore} from '../services/firebase';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../../App';
+import type {Collision, CollisionResult} from '../hooks/useCollision';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Result'>;
+
+const MAX_DEPTH = 3;
+
+// ── Animated entry wrapper ────────────────────────────────────────────────────
+function AnimatedEntry({
+  children,
+  delay = 0,
+}: {
+  children: React.ReactNode;
+  delay?: number;
+}) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(10)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1, duration: 280, delay, useNativeDriver: true,
+      }),
+      Animated.timing(translateY, {
+        toValue: 0, duration: 280, delay, useNativeDriver: true,
+      }),
+    ]).start();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <Animated.View style={{opacity, transform: [{translateY}]}}>
+      {children}
+    </Animated.View>
+  );
+}
+
+// ── Loading dots ──────────────────────────────────────────────────────────────
+function LoadingDots() {
+  const dots = [
+    useRef(new Animated.Value(0.4)).current,
+    useRef(new Animated.Value(0.4)).current,
+    useRef(new Animated.Value(0.4)).current,
+  ];
+
+  useEffect(() => {
+    const anims = dots.map((d, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 180),
+          Animated.timing(d, {toValue: 1, duration: 350, useNativeDriver: true}),
+          Animated.timing(d, {toValue: 0.4, duration: 350, useNativeDriver: true}),
+          Animated.delay((2 - i) * 180),
+        ]),
+      ),
+    );
+    anims.forEach(a => a.start());
+    return () => anims.forEach(a => a.stop());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <View style={cs.loadingRow}>
+      <View style={cs.loadingDots}>
+        {dots.map((d, i) => (
+          <Animated.View key={i} style={[cs.dot, {opacity: d}]} />
+        ))}
+      </View>
+      <Text style={cs.loadingText}>SCANNING DOMAINS...</Text>
+    </View>
+  );
+}
+
+// ── Recursive collision card ──────────────────────────────────────────────────
+interface CardProps {
+  collision: Collision;
+  accentColor: string;
+  depth: number;
+  breadcrumb: string[];
+  problem: string;
+  structuralEssence: string;
+  userPlan: 'free' | 'pro' | null;
+  onPaywall: () => void;
+}
+
+function CollisionCard({
+  collision,
+  accentColor,
+  depth,
+  breadcrumb,
+  problem,
+  structuralEssence,
+  userPlan,
+  onPaywall,
+}: CardProps) {
+  const [chainItems, setChainItems] = useState<Collision[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [chainError, setChainError] = useState<string | null>(null);
+
+  const handleGoDeeper = async () => {
+    if (userPlan === 'free' || userPlan === null) {
+      onPaywall();
+      return;
+    }
+    if (loading || chainItems.length > 0) {return;}
+    setLoading(true);
+    setChainError(null);
+    try {
+      const user = auth().currentUser;
+      if (!user) {throw new Error('Not signed in');}
+      const token = await user.getIdToken();
+      const resp = await fetch(`${BACKEND_URL}/collide`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          problem,
+          mode: 'deeper',
+          domain: collision.domain,
+          structuralEssence,
+        }),
+      });
+      if (!resp.ok) {
+        const b = await resp.json().catch(() => ({}));
+        const errCode = b?.error ?? '';
+        throw new Error(
+          errCode === 'pro_required'
+            ? 'Pro plan required'
+            : errCode || `Error ${resp.status}`,
+        );
+      }
+      const b = await resp.json();
+      const data = b.result ?? b;
+      if (!Array.isArray(data.collisions)) {throw new Error('Unexpected response');}
+      setChainItems(data.collisions.slice(0, 3));
+    } catch (e: any) {
+      setChainError(e?.message ?? 'Chain call failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const childBreadcrumb = [...breadcrumb, collision.domain];
+  const isChained = depth > 0;
+
+  return (
+    <View>
+      <View
+        style={[
+          cs.card,
+          isChained && {
+            marginLeft: depth * 16,
+            borderLeftWidth: 2,
+            borderLeftColor: accentColor,
+          },
+        ]}>
+        {/* 2px accent top bar */}
+        <View style={[cs.cardBar, {backgroundColor: accentColor}]} />
+        <View style={cs.cardContent}>
+          {/* Breadcrumb — only on chain cards */}
+          {isChained && breadcrumb.length > 0 && (
+            <Text style={cs.breadcrumb} numberOfLines={1}>
+              {breadcrumb.join(' > ')}
+            </Text>
+          )}
+
+          {/* Domain row */}
+          <View style={cs.domainRow}>
+            <View style={[cs.domainDot, {backgroundColor: accentColor}]} />
+            <Text style={cs.domainName}>
+              {collision.domain.toUpperCase()}
+            </Text>
+          </View>
+
+          <Text style={cs.cardTitle}>{collision.title}</Text>
+          <Text style={cs.cardBody}>{collision.how_they_solved_it}</Text>
+          <View style={cs.divider} />
+          <Text style={[cs.bridgeLabel, {color: accentColor}]}>
+            STRUCTURAL BRIDGE
+          </Text>
+          <Text style={cs.bridgeText}>{collision.bridge}</Text>
+
+          {/* Go Deeper */}
+          {depth < MAX_DEPTH && (
+            <>
+              <View style={cs.divider} />
+              {loading ? (
+                <LoadingDots />
+              ) : chainItems.length === 0 ? (
+                <TouchableOpacity
+                  onPress={handleGoDeeper}
+                  style={cs.deeperBtn}>
+                  <Text style={[cs.deeperText, {color: accentColor}]}>
+                    {`GO DEEPER IN ${collision.domain.toUpperCase()} \u2192`}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              {chainError !== null && (
+                <Text style={cs.errorText}>{chainError}</Text>
+              )}
+            </>
+          )}
+        </View>
+      </View>
+
+      {/* Recursive chain children */}
+      {chainItems.map((chain, i) => (
+        <AnimatedEntry key={`${collision.domain}-${depth}-${i}`} delay={i * 90}>
+          <CollisionCard
+            collision={chain}
+            accentColor={accentColor}
+            depth={depth + 1}
+            breadcrumb={childBreadcrumb}
+            problem={problem}
+            structuralEssence={structuralEssence}
+            userPlan={userPlan}
+            onPaywall={onPaywall}
+          />
+        </AnimatedEntry>
+      ))}
+    </View>
+  );
+}
+
+// ── Result screen ─────────────────────────────────────────────────────────────
+export default function ResultScreen({navigation, route}: Props) {
+  const {problem, result} = route.params;
+  const [userPlan, setUserPlan] = useState<'free' | 'pro' | null>(null);
+
+  // Read plan once on mount
+  useEffect(() => {
+    const user = auth().currentUser;
+    if (!user) {return;}
+    firestore()
+      .collection('users')
+      .doc(user.uid)
+      .get()
+      .then(snap => {
+        const data = snap.data() ?? {};
+        setUserPlan(data.plan === 'pro' ? 'pro' : 'free');
+      })
+      .catch(() => setUserPlan('free'));
+  }, []);
+
+  const handleShare = async () => {
+    await Share.share({
+      message: [
+        `PROBLEM: ${problem}`,
+        '',
+        `STRUCTURAL ESSENCE: ${result.structural_essence}`,
+        '',
+        `SYNTHESIS: ${result.synthesis}`,
+      ].join('\n'),
+    });
+  };
+
+  const handlePaywall = () => {
+    navigation.navigate('Paywall');
+  };
+
+  return (
+    <SafeAreaView style={cs.container}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+
+      {/* Top bar */}
+      <View style={cs.topBar}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={cs.backText}>← BACK</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleShare}>
+          <Text style={cs.shareText}>SHARE ↗</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        style={cs.scroll}
+        contentContainerStyle={cs.scrollContent}
+        keyboardShouldPersistTaps="handled">
+
+        {/* Structural Essence */}
+        <View style={cs.essenceBlock}>
+          <Text style={cs.sectionLabel}>STRUCTURAL ESSENCE</Text>
+          <Text style={cs.essenceText}>{result.structural_essence}</Text>
+        </View>
+
+        {/* Domain Collisions */}
+        <Text style={[cs.sectionLabel, {marginTop: 28, marginBottom: 14}]}>
+          DOMAIN COLLISIONS
+        </Text>
+        {result.collisions.map((collision, i) => (
+          <CollisionCard
+            key={i}
+            collision={collision}
+            accentColor={CARD_COLORS[i] ?? COLORS.accent}
+            depth={0}
+            breadcrumb={[]}
+            problem={problem}
+            structuralEssence={result.structural_essence}
+            userPlan={userPlan}
+            onPaywall={handlePaywall}
+          />
+        ))}
+
+        {/* Synthesis */}
+        <Text style={[cs.sectionLabel, {marginTop: 28, marginBottom: 14}]}>
+          SYNTHESIS
+        </Text>
+        <View style={cs.synthesisCard}>
+          <Text style={cs.synthesisTag}>SYNTHESIS</Text>
+          <Text style={cs.synthesisText}>{result.synthesis}</Text>
+        </View>
+
+        {/* New collision */}
+        <TouchableOpacity
+          style={cs.newBtn}
+          onPress={() => navigation.popToTop()}>
+          <Text style={cs.newBtnText}>NEW COLLISION →</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+const cs = StyleSheet.create({
+  container: {flex: 1, backgroundColor: COLORS.background},
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  backText: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    letterSpacing: 2,
+    color: COLORS.mutedLight,
+  },
+  shareText: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    letterSpacing: 2,
+    color: COLORS.accent,
+  },
+  scroll: {flex: 1},
+  scrollContent: {paddingHorizontal: 20, paddingBottom: 60},
+
+  // Essence
+  essenceBlock: {
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.accent,
+    paddingLeft: 14,
+    paddingVertical: 16,
+    marginTop: 20,
+  },
+  sectionLabel: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 3,
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+  },
+  essenceText: {
+    fontFamily: 'serif',
+    fontSize: 16,
+    fontStyle: 'italic',
+    color: COLORS.text,
+    lineHeight: 24,
+    marginTop: 8,
+  },
+
+  // Card
+  card: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+    marginBottom: 14,
+    overflow: 'hidden',
+  },
+  cardBar: {height: 2},
+  cardContent: {padding: 16},
+
+  // Breadcrumb
+  breadcrumb: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 2,
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+
+  // Domain row
+  domainRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 10},
+  domainDot: {width: 8, height: 8, marginRight: 8},
+  domainName: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 3,
+    color: COLORS.mutedLight,
+  },
+
+  // Card text
+  cardTitle: {
+    fontFamily: 'serif',
+    fontSize: 17,
+    fontStyle: 'italic',
+    color: COLORS.text,
+    lineHeight: 24,
+    marginBottom: 10,
+  },
+  cardBody: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+    color: COLORS.text,
+    lineHeight: 20,
+  },
+  divider: {height: 1, backgroundColor: COLORS.border, marginVertical: 14},
+  bridgeLabel: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 3,
+    marginBottom: 6,
+  },
+  bridgeText: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+    color: COLORS.mutedLight,
+    lineHeight: 20,
+  },
+
+  // Go Deeper
+  deeperBtn: {paddingVertical: 4},
+  deeperText: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+  errorText: {
+    fontFamily: 'monospace',
+    fontSize: 10,
+    color: COLORS.accentRed,
+    marginTop: 6,
+  },
+
+  // Loading dots
+  loadingRow: {alignItems: 'flex-start', paddingVertical: 8},
+  loadingDots: {flexDirection: 'row', gap: 6, marginBottom: 8},
+  dot: {width: 6, height: 6, backgroundColor: COLORS.accent},
+  loadingText: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 3,
+    color: COLORS.accent,
+  },
+
+  // Synthesis
+  synthesisCard: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.card,
+    padding: 16,
+  },
+  synthesisTag: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 3,
+    color: COLORS.accent,
+    marginBottom: 10,
+  },
+  synthesisText: {
+    fontFamily: 'serif',
+    fontSize: 15,
+    fontStyle: 'italic',
+    color: COLORS.text,
+    lineHeight: 24,
+  },
+
+  // New collision button
+  newBtn: {
+    backgroundColor: COLORS.accent,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 28,
+  },
+  newBtnText: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    letterSpacing: 3,
+    color: COLORS.background,
+    fontWeight: '700',
+  },
+});
+
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Result'>;
 
