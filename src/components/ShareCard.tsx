@@ -17,6 +17,7 @@ interface ShareCollisionCardProps {
   title: string;
   story: string;
   bridge: string;
+  structuralEssence: string;
   accentColor: string;
 }
 
@@ -25,6 +26,7 @@ export function ShareCollisionCard({
   title,
   story,
   bridge,
+  structuralEssence,
   accentColor,
 }: ShareCollisionCardProps) {
   return (
@@ -33,6 +35,12 @@ export function ShareCollisionCard({
       <View style={[s.accentBar, {backgroundColor: accentColor}]} />
 
       <View style={s.body}>
+        {/* Structural essence at top */}
+        <Text style={s.sectionLabel}>STRUCTURAL ESSENCE</Text>
+        <Text style={s.essenceText}>{structuralEssence}</Text>
+
+        <View style={s.divider} />
+
         {/* Domain tag */}
         <View style={s.domainRow}>
           <View style={[s.domainDot, {backgroundColor: accentColor}]} />

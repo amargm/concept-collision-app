@@ -324,6 +324,7 @@ export default function ResultScreen({navigation, route}: Props) {
               title={collision.title}
               story={collision.how_they_solved_it}
               bridge={collision.bridge}
+              structuralEssence={result.structural_essence}
               accentColor={CARD_COLORS[i] ?? COLORS.accent}
             />
           </View>
