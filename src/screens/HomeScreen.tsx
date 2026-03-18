@@ -92,11 +92,6 @@ export default function HomeScreen({navigation}: Props) {
               onPress={() => navigation.navigate('History')}>
               <Text style={styles.headerBtnText}>HISTORY</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerBtn}
-              onPress={() => navigation.navigate('ApiKey')}>
-              <Text style={styles.headerBtnText}>⚙ KEY</Text>
-            </TouchableOpacity>
           </View>
         </View>
 

@@ -1,6 +1,28 @@
 import {useState} from 'react';
-import {auth} from '../services/firebase';
+import {auth, firestore} from '../services/firebase';
 import {BACKEND_URL} from '../utils/constants';
+import {FirebaseAuthTypes} from '@react-native-firebase/auth';
+
+function firstDayOfNextMonth(): Date {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + 1, 1);
+}
+
+async function ensureUserDocument(user: FirebaseAuthTypes.User): Promise<void> {
+  const ref = firestore().collection('users').doc(user.uid);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    await ref.set({
+      email: user.email ?? '',
+      createdAt: firestore.FieldValue.serverTimestamp(),
+      plan: 'free',
+      collisionCount: 0,
+      collisionResetDate: firstDayOfNextMonth(),
+      mode: null,
+      domains: [],
+    });
+  }
+}
 
 export interface Collision {
   domain: string;
@@ -31,10 +53,15 @@ export function useCollision() {
     setLimitExceeded(false);
 
     try {
-      const token = await auth().currentUser?.getIdToken();
-      if (!token) {
+      const currentUser = auth().currentUser;
+      if (!currentUser) {
         throw new Error('Not signed in');
       }
+
+      // Guarantee user doc exists before backend checks it
+      await ensureUserDocument(currentUser);
+
+      const token = await currentUser.getIdToken();
 
       const response = await fetch(`${BACKEND_URL}/collide`, {
         method: 'POST',
