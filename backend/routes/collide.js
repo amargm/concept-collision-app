@@ -156,7 +156,7 @@ router.post('/', verifyAuth, async (req, res) => {
         systemInstruction: { parts: [{ text: systemPrompt }] },
         generationConfig: {
           temperature: 0.9,
-          maxOutputTokens: 1500,
+          maxOutputTokens: 8192,
           responseMimeType: 'application/json',
         },
       }),
@@ -169,7 +169,9 @@ router.post('/', verifyAuth, async (req, res) => {
     }
 
     const geminiData = await geminiRes.json();
-    const text = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    const parts = geminiData?.candidates?.[0]?.content?.parts ?? [];
+    const responsePart = parts.find(p => !p.thought) ?? parts[0];
+    const text = responsePart?.text ?? '';
     result = JSON.parse(text);
   } catch (err) {
     console.error('Gemini call failed', err);

@@ -101,7 +101,8 @@ export function useCollision() {
         throw new Error(msg);
       }
 
-      const data: CollisionResult = await response.json();
+      const body = await response.json();
+      const data: CollisionResult = body.result ?? body;
 
       if (
         !data.structural_essence ||
