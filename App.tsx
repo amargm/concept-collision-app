@@ -23,6 +23,7 @@ import OnboardingScreen from './src/screens/OnboardingScreen';
 import AuthScreen from './src/screens/AuthScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CollisionMapScreen from './src/screens/CollisionMapScreen';
+import WorkspaceScreen from './src/screens/WorkspaceScreen';
 
 // ── ApiKey compat shim (HomeScreen still imports this until it's rewritten) ───
 interface ApiKeyContextType {
@@ -48,7 +49,7 @@ const stub = (label: string) => () => (
 const DailyScreen            = stub('daily');
 const PaywallScreen          = stub('paywall');
 const CollectionDetailScreen = stub('collection detail');
-const WorkspaceScreen        = stub('workspace');
+const ProblemDetailScreen    = stub('problem detail');
 
 // ── Navigator types ───────────────────────────────────────────────────────────
 export type RootStackParamList = {
@@ -57,6 +58,7 @@ export type RootStackParamList = {
   Main: undefined;
   History: undefined;
   Result: {problem: string; result: CollisionResult; collisionId?: string};
+  ProblemDetail: {problemId: string};
   Paywall: undefined;
   CollectionDetail: {collectionId: string; name: string};
 };
@@ -194,6 +196,11 @@ export default function App() {
             />
 
             {/* Modals */}
+            <Stack.Screen
+              name="ProblemDetail"
+              component={ProblemDetailScreen}
+              options={{animation: 'slide_from_right'}}
+            />
             <Stack.Screen
               name="Paywall"
               component={PaywallScreen}
