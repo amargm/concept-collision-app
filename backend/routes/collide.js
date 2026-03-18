@@ -6,8 +6,9 @@ const router = express.Router();
 
 const FREE_COLLISION_LIMIT = parseInt(process.env.FREE_COLLISION_LIMIT || '10', 10);
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
 const GEMINI_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+  `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 const PROMPT_VERSION = 'v1';
 
 // ── System prompts by mode ────────────────────────────────────────────────────
