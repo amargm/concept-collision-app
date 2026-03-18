@@ -1,4 +1,4 @@
-import React, {useState, useRef} from 'react';
+import React, {useState, useRef, useEffect} from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,13 @@ import {
   StatusBar,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {useRoute} from '@react-navigation/native';
+import type {RouteProp} from '@react-navigation/native';
 import {COLORS, EXAMPLE_CHIPS} from '../utils/constants';
 import {useCollision} from '../hooks/useCollision';
 import {auth, firestore} from '../services/firebase';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
-import type {RootStackParamList} from '../../App';
+import type {RootStackParamList, MainTabParamList} from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -55,6 +57,8 @@ const loadingStyles = StyleSheet.create({
 });
 
 export default function HomeScreen({navigation}: Props) {
+  const route = useRoute<RouteProp<MainTabParamList, 'Home'>>();
+
   const [problem, setProblem] = useState('');
   const [focused, setFocused] = useState(false);
   const [savingWorkspace, setSavingWorkspace] = useState(false);
@@ -62,6 +66,17 @@ export default function HomeScreen({navigation}: Props) {
   const saveConfirmOpacity = useRef(new Animated.Value(0)).current;
   const {collide, loading, error, limitExceeded} = useCollision();
   const inputRef = useRef<TextInput>(null);
+
+  // Pre-fill problem text when navigated from ProblemDetailScreen via "COLLIDE AGAIN"
+  useEffect(() => {
+    const prefill = route.params?.prefillProblem;
+    if (prefill) {
+      setProblem(prefill);
+      setTimeout(() => inputRef.current?.focus(), 150);
+    }
+  // Only run when prefillProblem param changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.prefillProblem]);
 
   const handleCollide = async () => {
     if (!problem.trim()) return;

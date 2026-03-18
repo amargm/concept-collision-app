@@ -24,6 +24,7 @@ import AuthScreen from './src/screens/AuthScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import CollisionMapScreen from './src/screens/CollisionMapScreen';
 import WorkspaceScreen from './src/screens/WorkspaceScreen';
+import ProblemDetailScreen from './src/screens/ProblemDetailScreen';
 
 // ── ApiKey compat shim (HomeScreen still imports this until it's rewritten) ───
 interface ApiKeyContextType {
@@ -49,7 +50,6 @@ const stub = (label: string) => () => (
 const DailyScreen            = stub('daily');
 const PaywallScreen          = stub('paywall');
 const CollectionDetailScreen = stub('collection detail');
-const ProblemDetailScreen    = stub('problem detail');
 
 // ── Navigator types ───────────────────────────────────────────────────────────
 export type RootStackParamList = {
@@ -63,8 +63,8 @@ export type RootStackParamList = {
   CollectionDetail: {collectionId: string; name: string};
 };
 
-type MainTabParamList = {
-  Home: undefined;
+export type MainTabParamList = {
+  Home: {prefillProblem?: string} | undefined;
   Daily: undefined;
   Workspace: undefined;
   Map: undefined;
