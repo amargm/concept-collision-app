@@ -1,6 +1,5 @@
 import {useState, useEffect, useCallback} from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {STORAGE_KEYS} from '../utils/constants';
+import {auth, firestore} from '../services/firebase';
 import {CollisionResult} from './useCollision';
 
 export interface HistoryEntry {
@@ -13,36 +12,61 @@ export interface HistoryEntry {
 export function useHistory() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
-  const load = useCallback(async () => {
-    const raw = await AsyncStorage.getItem(STORAGE_KEYS.history);
-    if (raw) {
-      setHistory(JSON.parse(raw));
+  useEffect(() => {
+    const user = auth().currentUser;
+    if (!user) {
+      setHistory([]);
+      return;
     }
+
+    const unsub = firestore()
+      .collection('collisions')
+      .doc(user.uid)
+      .collection('items')
+      .orderBy('timestamp', 'desc')
+      .limit(50)
+      .onSnapshot(
+        snapshot => {
+          const entries: HistoryEntry[] = snapshot.docs.map(doc => {
+            const data = doc.data();
+            const ts: Date = data.timestamp?.toDate?.() ?? new Date();
+            return {
+              id: doc.id,
+              date: ts.toISOString(),
+              problem: data.problem ?? '',
+              result: data.result ?? {},
+            };
+          });
+          setHistory(entries);
+        },
+        () => {
+          // permission errors silently keep existing state
+        },
+      );
+
+    return unsub;
   }, []);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const add = useCallback(
-    async (problem: string, result: CollisionResult) => {
-      const entry: HistoryEntry = {
-        id: Date.now().toString(),
-        date: new Date().toISOString(),
-        problem,
-        result,
-      };
-      const updated = [entry, ...history];
-      await AsyncStorage.setItem(STORAGE_KEYS.history, JSON.stringify(updated));
-      setHistory(updated);
-    },
-    [history],
-  );
+  // Backend writes to Firestore — no local add needed.
+  const add = useCallback(async (_problem: string, _result: CollisionResult) => {
+    // no-op: history comes from Firestore in real time
+  }, []);
 
   const clear = useCallback(async () => {
-    await AsyncStorage.removeItem(STORAGE_KEYS.history);
-    setHistory([]);
+    const user = auth().currentUser;
+    if (!user) {return;}
+    const snapshot = await firestore()
+      .collection('collisions')
+      .doc(user.uid)
+      .collection('items')
+      .get();
+    const batch = firestore().batch();
+    snapshot.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
   }, []);
 
-  return {history, add, clear, reload: load};
+  // no-op: onSnapshot keeps state live; retained for call-site compat
+  const reload = useCallback(() => {}, []);
+
+  return {history, add, clear, reload};
 }

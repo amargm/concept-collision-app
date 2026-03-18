@@ -12,7 +12,6 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {COLORS, EXAMPLE_CHIPS} from '../utils/constants';
 import {useCollision} from '../hooks/useCollision';
-import {useHistory} from '../hooks/useHistory';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../../App';
 
@@ -58,14 +57,12 @@ export default function HomeScreen({navigation}: Props) {
   const [problem, setProblem] = useState('');
   const [focused, setFocused] = useState(false);
   const {collide, loading, error, limitExceeded} = useCollision();
-  const {add} = useHistory();
   const inputRef = useRef<TextInput>(null);
 
   const handleCollide = async () => {
     if (!problem.trim()) return;
     const result = await collide(problem.trim(), 'core');
     if (result) {
-      await add(problem.trim(), result);
       navigation.navigate('Result', {problem: problem.trim(), result});
     }
   };
