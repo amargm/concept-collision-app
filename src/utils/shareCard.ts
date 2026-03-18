@@ -1,10 +1,10 @@
 import {captureRef} from 'react-native-view-shot';
-import * as Sharing from 'expo-sharing';
+import Share from 'react-native-share';
 import type {RefObject} from 'react';
 
 /**
  * Captures the view referenced by `ref` as a PNG, then opens the native
- * share sheet with the image as an attachment via expo-sharing.
+ * share sheet with the image as an attachment.
  */
 export async function shareCardImage(ref: RefObject<any>): Promise<void> {
   const uri = await captureRef(ref, {
@@ -13,10 +13,13 @@ export async function shareCardImage(ref: RefObject<any>): Promise<void> {
     result: 'tmpfile',
   });
 
-  // Skip isAvailableAsync() — it can return false on Android bare workflow
-  // even when sharing is fully functional. Just call shareAsync directly.
-  await Sharing.shareAsync(uri, {
-    mimeType: 'image/png',
-    dialogTitle: 'Share Collision Card',
+  // react-native-share needs a file:// URI on Android
+  const fileUri = uri.startsWith('file://') ? uri : `file://${uri}`;
+
+  await Share.open({
+    url: fileUri,
+    type: 'image/png',
+    title: 'Share Collision Card',
+    failOnCancel: false,
   });
 }
