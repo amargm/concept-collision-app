@@ -15,6 +15,8 @@ import {auth, firestore} from '../services/firebase';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {RootStackParamList} from '../../App';
 import type {Collision, CollisionResult} from '../hooks/useCollision';
+import {ShareCollisionCard, ShareSynthesisCard} from '../components/ShareCard';
+import {shareCardImage} from '../utils/shareCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Result'>;
 
@@ -96,6 +98,7 @@ interface CardProps {
   structuralEssence: string;
   userPlan: 'free' | 'pro' | null;
   onPaywall: () => void;
+  shareRef?: React.RefObject<View>;
 }
 
 function CollisionCard({
@@ -107,6 +110,7 @@ function CollisionCard({
   structuralEssence,
   userPlan,
   onPaywall,
+  shareRef,
 }: CardProps) {
   const [chainItems, setChainItems] = useState<Collision[]>([]);
   const [loading, setLoading] = useState(false);
@@ -197,6 +201,20 @@ function CollisionCard({
           </Text>
           <Text style={cs.bridgeText}>{collision.bridge}</Text>
 
+          {/* Share card button — depth 0 only */}
+          {depth === 0 && shareRef && (
+            <>
+              <View style={cs.divider} />
+              <TouchableOpacity
+                style={cs.shareCardBtn}
+                onPress={() => shareCardImage(shareRef)}>
+                <Text style={[cs.shareCardText, {color: accentColor}]}>
+                  SHARE CARD ↗
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+
           {/* Go Deeper */}
           {depth < MAX_DEPTH && (
             <>
@@ -244,6 +262,12 @@ export default function ResultScreen({navigation, route}: Props) {
   const {problem, result} = route.params;
   const [userPlan, setUserPlan] = useState<'free' | 'pro' | null>(null);
 
+  // One share ref per top-level collision card + one for synthesis
+  const cardRefs = useRef<React.RefObject<View>[]>(
+    result.collisions.map(() => React.createRef<View>()),
+  ).current;
+  const synthesisRef = useRef<View>(null);
+
   // Read plan once on mount
   useEffect(() => {
     const user = auth().currentUser;
@@ -278,6 +302,26 @@ export default function ResultScreen({navigation, route}: Props) {
   return (
     <SafeAreaView style={cs.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+
+      {/* Hidden ShareCards — rendered off-screen for captureRef */}
+      <View style={cs.offScreen}>
+        {result.collisions.map((collision, i) => (
+          <View key={i} ref={cardRefs[i]} collapsable={false}>
+            <ShareCollisionCard
+              domain={collision.domain}
+              title={collision.title}
+              bridge={collision.bridge}
+              accentColor={CARD_COLORS[i] ?? COLORS.accent}
+            />
+          </View>
+        ))}
+        <View ref={synthesisRef} collapsable={false}>
+          <ShareSynthesisCard
+            structuralEssence={result.structural_essence}
+            synthesis={result.synthesis}
+          />
+        </View>
+      </View>
 
       {/* Top bar */}
       <View style={cs.topBar}>
@@ -315,6 +359,7 @@ export default function ResultScreen({navigation, route}: Props) {
             structuralEssence={result.structural_essence}
             userPlan={userPlan}
             onPaywall={handlePaywall}
+            shareRef={cardRefs[i]}
           />
         ))}
 
@@ -326,6 +371,13 @@ export default function ResultScreen({navigation, route}: Props) {
           <Text style={cs.synthesisTag}>SYNTHESIS</Text>
           <Text style={cs.synthesisText}>{result.synthesis}</Text>
         </View>
+
+        {/* Share Synthesis */}
+        <TouchableOpacity
+          style={cs.shareSynthesisBtn}
+          onPress={() => shareCardImage(synthesisRef)}>
+          <Text style={cs.shareSynthesisText}>SHARE SYNTHESIS ↗</Text>
+        </TouchableOpacity>
 
         {/* New collision */}
         <TouchableOpacity
@@ -341,6 +393,15 @@ export default function ResultScreen({navigation, route}: Props) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 const cs = StyleSheet.create({
   container: {flex: 1, backgroundColor: COLORS.background},
+
+  // Off-screen hidden share card container
+  offScreen: {
+    position: 'absolute',
+    left: -9999,
+    top: 0,
+    opacity: 0,
+  },
+
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -461,6 +522,31 @@ const cs = StyleSheet.create({
     fontSize: 10,
     color: COLORS.accentRed,
     marginTop: 6,
+  },
+
+  // Share card (within card)
+  shareCardBtn: {paddingVertical: 4},
+  shareCardText: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+
+  // Share synthesis (below synthesis card)
+  shareSynthesisBtn: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  shareSynthesisText: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    letterSpacing: 3,
+    color: COLORS.accent,
+    textTransform: 'uppercase',
   },
 
   // Loading dots
