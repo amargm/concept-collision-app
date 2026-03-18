@@ -55,6 +55,7 @@ export type RootStackParamList = {
   Onboarding: undefined;
   Auth: undefined;
   Main: undefined;
+  History: undefined;
   Result: {problem: string; result: CollisionResult; collisionId?: string};
   Paywall: undefined;
   CollectionDetail: {collectionId: string; name: string};
@@ -181,6 +182,11 @@ export default function App() {
             <Stack.Screen name="Main" component={MainTabs} />
 
             {/* Pushed from Home / History */}
+            <Stack.Screen
+              name="History"
+              component={HistoryScreen}
+              options={{animation: 'slide_from_right'}}
+            />
             <Stack.Screen
               name="Result"
               component={ResultScreen}

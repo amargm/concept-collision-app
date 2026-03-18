@@ -130,6 +130,16 @@ export default function SettingsScreen() {
         contentContainerStyle={s.content}
         showsVerticalScrollIndicator={false}>
 
+        {/* ── THINKING ───────────────────────────────────────────────────── */}
+        <SectionLabel label="THINKING" />
+
+        <TouchableOpacity
+          style={s.rowBetween}
+          onPress={() => navigation.navigate('History')}>
+          <Text style={s.navRowLabel}>HISTORY</Text>
+          <Text style={s.rowArrow}>→</Text>
+        </TouchableOpacity>
+
         {/* ── ACCOUNT ────────────────────────────────────────────────────── */}
         <SectionLabel label="ACCOUNT" />
 
@@ -298,6 +308,16 @@ const s = StyleSheet.create({
     letterSpacing: 2,
     color: '#e8e8e0',
     textTransform: 'uppercase',
+  },
+  navRowLabel: {
+    fontFamily: 'serif',
+    fontSize: 12,
+    color: '#e8e8e0',
+  },
+  rowArrow: {
+    fontFamily: 'monospace',
+    fontSize: 14,
+    color: '#555550',
   },
   rowLabelMuted: {
     fontFamily: 'monospace',
