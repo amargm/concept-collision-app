@@ -12,15 +12,26 @@ async function ensureUserDocument(user: FirebaseAuthTypes.User): Promise<void> {
   const ref = firestore().collection('users').doc(user.uid);
   const snap = await ref.get();
   if (!snap.exists) {
+    // Doc doesn't exist — create with all required fields
     await ref.set({
       email: user.email ?? '',
       createdAt: firestore.FieldValue.serverTimestamp(),
       plan: 'free',
       collisionCount: 0,
-      collisionResetDate: firstDayOfNextMonth(),
+      collisionResetDate: firestore.Timestamp.fromDate(firstDayOfNextMonth()),
       mode: null,
       domains: [],
     });
+  } else {
+    // Doc exists — ensure critical fields are present (handles stale/partial docs)
+    const data = snap.data() ?? {};
+    const missing: Record<string, any> = {};
+    if (!data.plan) missing.plan = 'free';
+    if (data.collisionCount === undefined) missing.collisionCount = 0;
+    if (!data.collisionResetDate) missing.collisionResetDate = firestore.Timestamp.fromDate(firstDayOfNextMonth());
+    if (Object.keys(missing).length > 0) {
+      await ref.set(missing, {merge: true});
+    }
   }
 }
 
