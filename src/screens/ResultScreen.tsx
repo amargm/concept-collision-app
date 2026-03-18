@@ -322,6 +322,7 @@ export default function ResultScreen({navigation, route}: Props) {
             <ShareCollisionCard
               domain={collision.domain}
               title={collision.title}
+              story={collision.how_they_solved_it}
               bridge={collision.bridge}
               accentColor={CARD_COLORS[i] ?? COLORS.accent}
             />

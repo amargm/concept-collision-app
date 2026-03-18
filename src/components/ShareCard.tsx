@@ -15,6 +15,7 @@ const CARD_WIDTH = 375;
 interface ShareCollisionCardProps {
   domain: string;
   title: string;
+  story: string;
   bridge: string;
   accentColor: string;
 }
@@ -22,6 +23,7 @@ interface ShareCollisionCardProps {
 export function ShareCollisionCard({
   domain,
   title,
+  story,
   bridge,
   accentColor,
 }: ShareCollisionCardProps) {
@@ -39,6 +41,9 @@ export function ShareCollisionCard({
 
         {/* Title */}
         <Text style={s.title}>{title}</Text>
+
+        {/* Brief story */}
+        <Text style={s.storyText}>{story}</Text>
 
         {/* Divider */}
         <View style={s.divider} />
@@ -147,6 +152,13 @@ const s = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 3,
     marginBottom: 8,
+  },
+  storyText: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    color: '#ccccbb',
+    lineHeight: 18,
+    marginBottom: 16,
   },
   bridgeText: {
     fontFamily: 'monospace',
