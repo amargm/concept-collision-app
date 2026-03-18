@@ -368,7 +368,7 @@ export default function CollisionMapScreen() {
 
   // ── Empty state ────────────────────────────────────────────────────────────
   const totalCollisions = mapData?.totalCollisions ?? 0;
-  const hasEnough = totalCollisions >= 50 && (mapData?.nodes.length ?? 0) > 0;
+  const hasEnough = (mapData?.nodes.length ?? 0) > 0;
 
   if (!hasEnough) {
     return (
