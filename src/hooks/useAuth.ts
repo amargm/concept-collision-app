@@ -36,7 +36,7 @@ async function ensureUserDocument(user: FirebaseAuthTypes.User): Promise<void> {
 export interface AuthHook {
   user: FirebaseAuthTypes.User | null;
   loading: boolean;
-  signIn: () => Promise<void>;
+  signIn: () => Promise<boolean>;
   signOut: () => Promise<void>;
 }
 
@@ -56,25 +56,39 @@ export function useAuth(): AuthHook {
     return unsubscribe;
   }, []);
 
-  async function signIn(): Promise<void> {
+  async function signIn(): Promise<boolean> {
     setLoading(true);
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       const response = await GoogleSignin.signIn();
-      // v11+ returns { type, data } — user cancelled returns type:'cancelled' without throwing
-      if (response.type !== 'success' || !response.data?.idToken) {
-        return;
+
+      // User cancelled — silent, no error
+      if (response.type === 'cancelled') {
+        return false;
       }
+
+      // Any other non-success type — surface it so we can see what's happening
+      if (response.type !== 'success') {
+        throw new Error(`Google Sign-In returned: ${response.type}`);
+      }
+
+      // idToken missing — OAuth misconfiguration
+      if (!response.data?.idToken) {
+        throw new Error('No ID token from Google. Check Firebase OAuth config.');
+      }
+
       const credential = auth.GoogleAuthProvider.credential(response.data.idToken);
       await auth().signInWithCredential(credential);
-      // onAuthStateChanged will fire and set user — navigation handled there
+      return true;
     } catch (error: any) {
+      // Swallow Google SDK in-progress errors
       if (
-        error.code !== statusCodes.SIGN_IN_CANCELLED &&
-        error.code !== statusCodes.IN_PROGRESS
+        error.code === statusCodes.SIGN_IN_CANCELLED ||
+        error.code === statusCodes.IN_PROGRESS
       ) {
-        throw error;
+        return false;
       }
+      throw error;
     } finally {
       setLoading(false);
     }
