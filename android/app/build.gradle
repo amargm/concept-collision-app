@@ -89,6 +89,10 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Expo modules (manually linked — avoids expo-updates-gradle-plugin Gradle conflict)
+    implementation project(':expo-modules-core')
+    implementation project(':expo-sharing')
 }
 
 apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)

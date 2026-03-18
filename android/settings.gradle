@@ -8,6 +8,15 @@ pluginManagement {
 }
 
 rootProject.name = 'ConceptCollision'
-apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle"); useExpoModules()
 apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesSettingsGradle(settings)
+
+// Manually include expo-modules-core and expo-sharing without the full
+// useExpoModules() autolinking (which pulls in expo-updates-gradle-plugin
+// and breaks the build on RN 0.73 composite-build gradle plugin setup).
+include ':expo-modules-core'
+project(':expo-modules-core').projectDir = new File('../node_modules/expo-modules-core/android')
+
+include ':expo-sharing'
+project(':expo-sharing').projectDir = new File('../node_modules/expo-sharing/android')
+
 include ':app'
