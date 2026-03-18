@@ -115,6 +115,7 @@ function CollisionCard({
   const [chainItems, setChainItems] = useState<Collision[]>([]);
   const [loading, setLoading] = useState(false);
   const [chainError, setChainError] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   const handleGoDeeper = async () => {
     if (userPlan === 'free' || userPlan === null) {
@@ -207,11 +208,21 @@ function CollisionCard({
               <View style={cs.divider} />
               <TouchableOpacity
                 style={cs.shareCardBtn}
-                onPress={() => shareCardImage(shareRef)}>
+                onPress={async () => {
+                  setShareError(null);
+                  try {
+                    await shareCardImage(shareRef);
+                  } catch (e: any) {
+                    setShareError(e?.message ?? 'Share failed');
+                  }
+                }}>
                 <Text style={[cs.shareCardText, {color: accentColor}]}>
                   SHARE CARD ↗
                 </Text>
               </TouchableOpacity>
+              {shareError !== null && (
+                <Text style={cs.errorText}>{shareError}</Text>
+              )}
             </>
           )}
 
@@ -261,6 +272,7 @@ function CollisionCard({
 export default function ResultScreen({navigation, route}: Props) {
   const {problem, result} = route.params;
   const [userPlan, setUserPlan] = useState<'free' | 'pro' | null>(null);
+  const [synthShareError, setSynthShareError] = useState<string | null>(null);
 
   // One share ref per top-level collision card + one for synthesis
   const cardRefs = useRef<React.RefObject<View>[]>(
@@ -375,9 +387,19 @@ export default function ResultScreen({navigation, route}: Props) {
         {/* Share Synthesis */}
         <TouchableOpacity
           style={cs.shareSynthesisBtn}
-          onPress={() => shareCardImage(synthesisRef)}>
+          onPress={async () => {
+            setSynthShareError(null);
+            try {
+              await shareCardImage(synthesisRef);
+            } catch (e: any) {
+              setSynthShareError(e?.message ?? 'Share failed');
+            }
+          }}>
           <Text style={cs.shareSynthesisText}>SHARE SYNTHESIS ↗</Text>
         </TouchableOpacity>
+        {synthShareError !== null && (
+          <Text style={[cs.errorText, {marginTop: 6}]}>{synthShareError}</Text>
+        )}
 
         {/* New collision */}
         <TouchableOpacity
@@ -395,11 +417,12 @@ const cs = StyleSheet.create({
   container: {flex: 1, backgroundColor: COLORS.background},
 
   // Off-screen hidden share card container
+  // opacity must stay 1 — Android skips rendering opacity:0 views,
+  // which would cause captureRef to capture a blank image.
   offScreen: {
     position: 'absolute',
     left: -9999,
     top: 0,
-    opacity: 0,
   },
 
   topBar: {
