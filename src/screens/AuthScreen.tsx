@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {
+  Alert,
   Animated,
   Linking,
   StyleSheet,
@@ -65,11 +66,13 @@ export default function AuthScreen({navigation}: Props) {
     setSigningIn(true);
     try {
       const success = await signIn();
+      Alert.alert('DEBUG', `signIn() returned: ${success}`);
       if (success) {
         navigation.replace('Main');
       }
     } catch (e: any) {
       const msg: string = e?.message ?? 'Sign-in failed. Try again.';
+      Alert.alert('DEBUG ERROR', msg);
       setError(msg.length > 120 ? msg.slice(0, 120) + '…' : msg);
     } finally {
       setSigningIn(false);
