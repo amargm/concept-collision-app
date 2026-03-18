@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Animated,
   StatusBar,
+  Alert,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useRoute} from '@react-navigation/native';
@@ -62,8 +63,7 @@ export default function HomeScreen({navigation}: Props) {
   const [problem, setProblem] = useState('');
   const [focused, setFocused] = useState(false);
   const [savingWorkspace, setSavingWorkspace] = useState(false);
-  const [workspaceSaved, setWorkspaceSaved] = useState(false);
-  const saveConfirmOpacity = useRef(new Animated.Value(0)).current;
+  const [workspaceSaveError, setWorkspaceSaveError] = useState<string | null>(null);
   const {collide, loading, error, limitExceeded} = useCollision();
   const inputRef = useRef<TextInput>(null);
 
@@ -88,10 +88,11 @@ export default function HomeScreen({navigation}: Props) {
 
   const handleSaveToWorkspace = async () => {
     const trimmed = problem.trim();
-    if (!trimmed || savingWorkspace) return;
+    if (!trimmed || savingWorkspace) {return;}
     const user = auth().currentUser;
-    if (!user) return;
+    if (!user) {return;}
     setSavingWorkspace(true);
+    setWorkspaceSaveError(null);
     try {
       await firestore()
         .collection('problems')
@@ -107,15 +108,19 @@ export default function HomeScreen({navigation}: Props) {
           createdAt: firestore.FieldValue.serverTimestamp(),
         });
       setProblem('');
-      // Fade in confirmation then fade out
-      Animated.sequence([
-        Animated.timing(saveConfirmOpacity, {toValue: 1, duration: 200, useNativeDriver: true}),
-        Animated.delay(1500),
-        Animated.timing(saveConfirmOpacity, {toValue: 0, duration: 300, useNativeDriver: true}),
-      ]).start(() => setWorkspaceSaved(false));
-      setWorkspaceSaved(true);
-    } catch {
-      // silently ignore
+      Alert.alert(
+        'Saved to Workspace',
+        'Your problem has been added to your workspace.',
+        [
+          {text: "SEE IT LATER", style: 'cancel'},
+          {
+            text: 'TAKE ME THERE',
+            onPress: () => (navigation as any).navigate('Workspace'),
+          },
+        ],
+      );
+    } catch (e: any) {
+      setWorkspaceSaveError(e?.message ?? 'Failed to save. Please try again.');
     } finally {
       setSavingWorkspace(false);
     }
@@ -183,14 +188,14 @@ export default function HomeScreen({navigation}: Props) {
             onPress={handleSaveToWorkspace}
             disabled={savingWorkspace}
             style={styles.saveWorkspaceBtn}>
-            <Text style={styles.saveWorkspaceBtnText}>SAVE TO WORKSPACE</Text>
+            <Text style={styles.saveWorkspaceBtnText}>
+              {savingWorkspace ? 'SAVING...' : 'SAVE TO WORKSPACE'}
+            </Text>
           </TouchableOpacity>
         )}
-        <Animated.Text
-          style={[styles.saveConfirmText, {opacity: saveConfirmOpacity}]}
-          pointerEvents="none">
-          SAVED TO WORKSPACE
-        </Animated.Text>
+        {workspaceSaveError !== null && (
+          <Text style={styles.workspaceSaveErrorText}>{workspaceSaveError}</Text>
+        )}
 
         {limitExceeded ? (
           <Text style={styles.errorText}>
@@ -279,13 +284,13 @@ const styles = StyleSheet.create({
     color: '#64c8f0',
     textTransform: 'uppercase',
   },
-  saveConfirmText: {
+  workspaceSaveErrorText: {
     fontFamily: 'monospace',
     fontSize: 9,
-    letterSpacing: 3,
-    color: '#64c8f0',
+    letterSpacing: 2,
+    color: '#f06464',
     textAlign: 'center',
-    marginTop: 4,
+    marginTop: 6,
   },
   headerBtnText: {
     fontFamily: 'monospace',

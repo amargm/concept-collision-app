@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {
+  Alert,
   Animated,
   ScrollView,
   Share,
@@ -274,13 +275,14 @@ export default function ResultScreen({navigation, route}: Props) {
   const [userPlan, setUserPlan] = useState<'free' | 'pro' | null>(null);
   const [synthShareError, setSynthShareError] = useState<string | null>(null);
   const [savingWorkspace, setSavingWorkspace] = useState(false);
-  const [workspaceSavedOpacity] = useState(() => new Animated.Value(0));
+  const [workspaceSaveError, setWorkspaceSaveError] = useState<string | null>(null);
 
   const handleSaveProblemToWorkspace = async () => {
-    if (savingWorkspace) return;
+    if (savingWorkspace) {return;}
     const user = auth().currentUser;
-    if (!user) return;
+    if (!user) {return;}
     setSavingWorkspace(true);
+    setWorkspaceSaveError(null);
     try {
       await firestore()
         .collection('problems')
@@ -295,13 +297,20 @@ export default function ResultScreen({navigation, route}: Props) {
           domains: result.collisions.map(c => c.domain),
           createdAt: firestore.FieldValue.serverTimestamp(),
         });
-      Animated.sequence([
-        Animated.timing(workspaceSavedOpacity, {toValue: 1, duration: 200, useNativeDriver: true}),
-        Animated.delay(1800),
-        Animated.timing(workspaceSavedOpacity, {toValue: 0, duration: 300, useNativeDriver: true}),
-      ]).start();
-    } catch {
-      // silently ignore
+      Alert.alert(
+        'Saved to Workspace',
+        'Your problem has been added to your workspace.',
+        [
+          {text: 'SEE IT LATER', style: 'cancel'},
+          {
+            text: 'TAKE ME THERE',
+            onPress: () =>
+              (navigation as any).navigate('Main', {screen: 'Workspace'}),
+          },
+        ],
+      );
+    } catch (e: any) {
+      setWorkspaceSaveError(e?.message ?? 'Failed to save. Please try again.');
     } finally {
       setSavingWorkspace(false);
     }
@@ -452,11 +461,9 @@ export default function ResultScreen({navigation, route}: Props) {
             {savingWorkspace ? 'SAVING...' : 'SAVE PROBLEM TO WORKSPACE'}
           </Text>
         </TouchableOpacity>
-        <Animated.Text
-          style={[cs.saveWorkspaceConfirm, {opacity: workspaceSavedOpacity}]}
-          pointerEvents="none">
-          SAVED TO WORKSPACE
-        </Animated.Text>
+        {workspaceSaveError !== null && (
+          <Text style={cs.saveWorkspaceError}>{workspaceSaveError}</Text>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -681,12 +688,12 @@ const cs = StyleSheet.create({
     color: '#64c8f0',
     textTransform: 'uppercase',
   },
-  saveWorkspaceConfirm: {
+  saveWorkspaceError: {
     fontFamily: 'monospace',
     fontSize: 9,
-    letterSpacing: 3,
-    color: '#64c8f0',
+    letterSpacing: 2,
+    color: '#f06464',
     textAlign: 'center',
-    marginBottom: 24,
+    marginTop: 6,
   },
 });
