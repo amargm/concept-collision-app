@@ -21,6 +21,7 @@ import HistoryScreen from './src/screens/HistoryScreen';
 import ResultScreen from './src/screens/ResultScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import AuthScreen from './src/screens/AuthScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
 
 // ── ApiKey compat shim (HomeScreen still imports this until it's rewritten) ───
 interface ApiKeyContextType {
@@ -44,7 +45,6 @@ const stub = (label: string) => () => (
   </View>
 );
 const DailyScreen            = stub('daily');
-const SettingsScreen         = stub('settings');
 const PaywallScreen          = stub('paywall');
 const CollectionDetailScreen = stub('collection detail');
 
