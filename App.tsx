@@ -48,6 +48,7 @@ const stub = (label: string) => () => (
 const DailyScreen            = stub('daily');
 const PaywallScreen          = stub('paywall');
 const CollectionDetailScreen = stub('collection detail');
+const WorkspaceScreen        = stub('workspace');
 
 // ── Navigator types ───────────────────────────────────────────────────────────
 export type RootStackParamList = {
@@ -62,7 +63,7 @@ export type RootStackParamList = {
 type MainTabParamList = {
   Home: undefined;
   Daily: undefined;
-  History: undefined;
+  Workspace: undefined;
   Map: undefined;
   Settings: undefined;
 };
@@ -121,11 +122,18 @@ function MainTabs() {
         tabBarLabelStyle: styles.tabLabel,
         tabBarHideOnKeyboard: true,
       }}>
-      <Tab.Screen name="Home"     component={HomeScreen} />
-      <Tab.Screen name="Daily"    component={DailyScreen} />
-      <Tab.Screen name="History"  component={HistoryScreen} />
-      <Tab.Screen name="Map"      component={CollisionMapScreen} />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
+      <Tab.Screen name="Home"      component={HomeScreen} />
+      <Tab.Screen name="Daily"     component={DailyScreen} />
+      <Tab.Screen
+        name="Workspace"
+        component={WorkspaceScreen}
+        options={{
+          tabBarActiveTintColor: '#64c8f0',
+          tabBarLabel: 'WORKSPACE',
+        }}
+      />
+      <Tab.Screen name="Map"       component={CollisionMapScreen} />
+      <Tab.Screen name="Settings"  component={SettingsScreen} />
     </Tab.Navigator>
   );
 }
