@@ -29,6 +29,9 @@ import type {CollisionResult, Collision, CollisionMode} from '../hooks/useCollis
 import StagePicker from '../components/StagePicker';
 import ClosingSheet from '../components/ClosingSheet';
 import ThreadCollisionCard from '../components/ThreadCollisionCard';
+import LinkPickerSheet from '../components/LinkPickerSheet';
+import LinkTypeSheet from '../components/LinkTypeSheet';
+import type {LinkType} from '../components/LinkTypeSheet';
 import type {Stage} from '../components/StagePicker';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -113,7 +116,21 @@ function domainCategory(domain: string): string {
   return 'Other';
 }
 
+// ── Link type labels ─────────────────────────────────────────────────────────
+const LINK_TYPE_LABELS: Record<string, string> = {
+  related:      'RELATED',
+  blocking:     'BLOCKING',
+  sub_problem:  'SUB-PROBLEM',
+  spawned_from: 'SPAWNED FROM',
+};
+
 // ── Types ─────────────────────────────────────────────────────────────────────
+interface LinkedProblemDoc {
+  id:      string;
+  problem: string;
+  stage:   Stage;
+}
+
 interface ProblemDoc {
   id: string;
   problem: string;
@@ -126,6 +143,8 @@ interface ProblemDoc {
   createdAt: any;
   noteCount?: number;
   keyInsightCount?: number;
+  linkedProblemIds: string[];
+  linkTypes: Record<string, string>;
 }
 
 interface CollisionDoc {
@@ -420,6 +439,10 @@ export default function ProblemDetailScreen() {
   const [collideError, setCollideError] = useState<string | null>(null);
   const [keyInsights, setKeyInsights]   = useState<Set<string>>(new Set<string>());
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set<string>());
+  const [linkPickerVisible,     setLinkPickerVisible]     = useState(false);
+  const [linkTypePickerVisible, setLinkTypePickerVisible] = useState(false);
+  const [pendingLinkProblem,    setPendingLinkProblem]    = useState<{id: string; text: string} | null>(null);
+  const [linkedProblemDocs,     setLinkedProblemDocs]     = useState<LinkedProblemDoc[]>([]);
   const savedConfirmOpacity = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
   const noteRef = useRef<TextInput>(null);
@@ -467,6 +490,8 @@ export default function ProblemDetailScreen() {
             noteCount:         data.noteCount      ?? 0,
             keyInsightCount:   data.keyInsightCount ?? 0,
             createdAt:         data.createdAt,
+            linkedProblemIds:  data.linkedProblemIds ?? [],
+            linkTypes:         data.linkTypes        ?? {},
           });
           // Seed key-insight state from Firestore on first load only
           setKeyInsights(prev =>
@@ -573,6 +598,38 @@ export default function ProblemDetailScreen() {
       );
     return unsub;
   }, [problemId]);
+
+  // ── Fetch linked problem docs whenever linkedProblemIds change ────────────
+  useEffect(() => {
+    if (!problem?.linkedProblemIds?.length) {
+      setLinkedProblemDocs([]);
+      return;
+    }
+    const user = auth().currentUser;
+    if (!user) {return;}
+    Promise.all(
+      problem.linkedProblemIds.map(lid =>
+        firestore()
+          .collection('problems')
+          .doc(user.uid)
+          .collection('items')
+          .doc(lid)
+          .get(),
+      ),
+    )
+      .then(snaps => {
+        const docs: LinkedProblemDoc[] = snaps
+          .filter(snap => snap.exists)
+          .map(snap => ({
+            id:      snap.id,
+            problem: snap.data()?.problem ?? '',
+            stage:   (snap.data()?.stage ?? 'waiting') as Stage,
+          }));
+        setLinkedProblemDocs(docs);
+      })
+      .catch(() => setLinkedProblemDocs([]));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [problem?.linkedProblemIds?.join(','), problemId]);
 
   // ── Build chronological thread ────────────────────────────────────────────
   const thread: ThreadItem[] = [
@@ -792,6 +849,47 @@ export default function ProblemDetailScreen() {
     });
   }, [problemId]);
 
+  // ── Link handlers ─────────────────────────────────────────────────────────
+  const handleAddLink = useCallback(async (targetId: string, linkType: LinkType) => {
+    const user = auth().currentUser;
+    if (!user) {return;}
+    const base = firestore()
+      .collection('problems')
+      .doc(user.uid)
+      .collection('items');
+    await Promise.all([
+      base.doc(problemId).update({
+        linkedProblemIds:          firestore.FieldValue.arrayUnion(targetId),
+        [`linkTypes.${targetId}`]: linkType,
+      }),
+      base.doc(targetId).update({
+        linkedProblemIds:           firestore.FieldValue.arrayUnion(problemId),
+        [`linkTypes.${problemId}`]: linkType,
+      }),
+    ]);
+    setPendingLinkProblem(null);
+    setLinkTypePickerVisible(false);
+  }, [problemId]);
+
+  const handleRemoveLink = useCallback(async (targetId: string) => {
+    const user = auth().currentUser;
+    if (!user) {return;}
+    const base = firestore()
+      .collection('problems')
+      .doc(user.uid)
+      .collection('items');
+    await Promise.all([
+      base.doc(problemId).update({
+        linkedProblemIds:          firestore.FieldValue.arrayRemove(targetId),
+        [`linkTypes.${targetId}`]: firestore.FieldValue.delete(),
+      }),
+      base.doc(targetId).update({
+        linkedProblemIds:           firestore.FieldValue.arrayRemove(problemId),
+        [`linkTypes.${problemId}`]: firestore.FieldValue.delete(),
+      }),
+    ]);
+  }, [problemId]);
+
   // ── Collect all unique domains across collision docs ──────────────────────
   const allDomains: string[] = [];
   collisionDocs.forEach(cd => {
@@ -916,6 +1014,43 @@ export default function ProblemDetailScreen() {
         </ScrollView>
       )}
 
+      {/* LINKED PROBLEMS — only when at least one link exists */}
+      {problem.linkedProblemIds.length > 0 && (
+        <>
+          <View style={s.linkedHeaderRow}>
+            <View style={s.linkedHeaderLine} />
+            <Text style={s.linkedHeaderLabel}>LINKED PROBLEMS</Text>
+            <View style={s.linkedHeaderLine} />
+          </View>
+          {problem.linkedProblemIds.map(lid => {
+            const lp       = linkedProblemDocs.find(p => p.id === lid);
+            const lt       = problem.linkTypes[lid];
+            const ltLabel  = lt ? (LINK_TYPE_LABELS[lt] ?? lt.toUpperCase()) : '';
+            return (
+              <TouchableOpacity
+                key={lid}
+                style={s.linkedRow}
+                onPress={() => navigation.push('ProblemDetail', {problemId: lid})}
+                activeOpacity={0.7}>
+                {!!ltLabel && (
+                  <View style={s.linkTypeChip}>
+                    <Text style={s.linkTypeChipText}>{ltLabel}</Text>
+                  </View>
+                )}
+                <Text style={s.linkedProblemText} numberOfLines={1}>
+                  {lp?.problem ?? '…'}
+                </Text>
+                <TouchableOpacity
+                  onPress={e => {e.stopPropagation(); handleRemoveLink(lid);}}
+                  hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                  <Text style={s.linkedRemoveX}>×</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
+            );
+          })}
+        </>
+      )}
+
       {/* KEY INSIGHTS summary — only when at least one insight is marked */}
       {keyInsights.size > 0 && (
         <>
@@ -1026,6 +1161,15 @@ export default function ProblemDetailScreen() {
       {!isClosing && (
         <TouchableOpacity style={s.howEndWrap} onPress={handleHowDidEnd}>
           <Text style={s.howEndText}>HOW DID THIS END?</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* LINK TO ANOTHER PROBLEM — only when actively working the problem */}
+      {(problem.stage === 'thinking' || problem.stage === 'resting') && (
+        <TouchableOpacity
+          style={s.linkActionWrap}
+          onPress={() => setLinkPickerVisible(true)}>
+          <Text style={s.linkActionText}>LINK TO ANOTHER PROBLEM</Text>
         </TouchableOpacity>
       )}
 
@@ -1151,6 +1295,31 @@ export default function ProblemDetailScreen() {
 
       {/* ── Note sheet (non-modal, slides up above action bar) ── */}
       {/* Removed — using inline note in ListFooter instead */}
+
+      {/* ── Link picker ── */}
+      <LinkPickerSheet
+        visible={linkPickerVisible}
+        excludeIds={[problemId, ...problem.linkedProblemIds]}
+        onClose={() => setLinkPickerVisible(false)}
+        onSelect={(id, text) => {
+          setLinkPickerVisible(false);
+          setPendingLinkProblem({id, text});
+          setLinkTypePickerVisible(true);
+        }}
+      />
+
+      {/* ── Link type picker ── */}
+      <LinkTypeSheet
+        visible={linkTypePickerVisible}
+        targetText={pendingLinkProblem?.text ?? ''}
+        onClose={() => {setLinkTypePickerVisible(false); setPendingLinkProblem(null);}}
+        onConfirm={linkType => {
+          if (pendingLinkProblem) {
+            handleAddLink(pendingLinkProblem.id, linkType);
+          }
+          setLinkTypePickerVisible(false);
+        }}
+      />
 
       {/* ── Saved confirmation ── */}
       <Animated.View
@@ -1671,5 +1840,75 @@ const s = StyleSheet.create({
     fontSize:   11,
     color:      C.text,
     lineHeight: 16,
+  },
+
+  // ── LINKED PROBLEMS section ──
+  linkedHeaderRow: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    paddingHorizontal: 24,
+    marginTop:       16,
+    marginBottom:    8,
+  },
+  linkedHeaderLine: {
+    flex:            1,
+    height:          1,
+    backgroundColor: C.border,
+  },
+  linkedHeaderLabel: {
+    fontFamily:    'monospace',
+    fontSize:      9,
+    letterSpacing: 3,
+    color:         C.muted,
+    textTransform: 'uppercase',
+    paddingHorizontal: 10,
+  },
+  linkedRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    paddingHorizontal: 24,
+    paddingVertical:   10,
+    gap:               10,
+    borderLeftWidth:   0,
+  },
+  linkTypeChip: {
+    borderWidth:       1,
+    borderColor:       C.border,
+    paddingHorizontal: 6,
+    paddingVertical:   2,
+    flexShrink:        0,
+  },
+  linkTypeChipText: {
+    fontFamily:    'monospace',
+    fontSize:      8,
+    letterSpacing: 1.5,
+    color:         C.muted,
+    textTransform: 'uppercase',
+  },
+  linkedProblemText: {
+    flex:       1,
+    fontFamily: 'monospace',
+    fontSize:   11,
+    color:      C.label,
+    lineHeight: 16,
+  },
+  linkedRemoveX: {
+    fontFamily:  'monospace',
+    fontSize:    16,
+    color:       C.muted,
+    lineHeight:  20,
+  },
+
+  // ── LINK action (footer) ──
+  linkActionWrap: {
+    alignItems:  'center',
+    paddingVertical: 10,
+  },
+  linkActionText: {
+    fontFamily:    'monospace',
+    fontSize:      9,
+    letterSpacing: 2,
+    color:         C.muted,
+    textTransform: 'uppercase',
   },
 });
