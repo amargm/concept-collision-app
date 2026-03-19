@@ -13,7 +13,6 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -29,6 +28,8 @@ import type {CollisionResult, Collision, CollisionMode} from '../hooks/useCollis
 import StagePicker from '../components/StagePicker';
 import ClosingSheet from '../components/ClosingSheet';
 import ThreadCollisionCard from '../components/ThreadCollisionCard';
+import NoteFloatingPill from '../components/NoteFloatingPill';
+import NoteSheet from '../components/NoteSheet';
 import type {Stage} from '../components/StagePicker';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -407,9 +408,10 @@ export default function ProblemDetailScreen() {
   const [events, setEvents]               = useState<StageEventDoc[]>([]);
   const [loadingProblem, setLoadingProblem]       = useState(true);
   const [loadingCollisions, setLoadingCollisions] = useState(false);
-  const [addingNote, setAddingNote]                   = useState(false);
+  const [addingNote, setAddingNote]                   = useState(false);  // legacy — kept for rollback safety
   const [noteText, setNoteText]                       = useState('');
   const [savingNote, setSavingNote]                   = useState(false);
+  const [noteSheetVisible, setNoteSheetVisible]       = useState(false);
   const [stagePickerVisible, setStagePickerVisible]   = useState(false);
   const [closingSheetVisible, setClosingSheetVisible] = useState(false);
   const [closingTargetStage, setClosingTargetStage]   = useState<Stage>('clear');
@@ -420,8 +422,6 @@ export default function ProblemDetailScreen() {
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set<string>());
   const savedConfirmOpacity = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
-
-  const noteRef = useRef<TextInput>(null);
 
   // Persist collide mode across sessions
   const setCollideMode = useCallback((m: CollisionMode) => {
@@ -681,6 +681,25 @@ export default function ProblemDetailScreen() {
       setSavingNote(false);
     }
   }, [noteText, savingNote, problemId]);
+
+  const handleSaveNoteFromSheet = useCallback(async (text: string) => {
+    const user = auth().currentUser;
+    if (!user) {throw new Error('Not authenticated');}
+    await firestore()
+      .collection('problems')
+      .doc(user.uid)
+      .collection('items')
+      .doc(problemId)
+      .collection('notes')
+      .add({
+        text,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      });
+    // Scroll to end after brief delay to let Firestore listener update notes state
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({animated: true});
+    }, 300);
+  }, [problemId]);
 
   const handleInlineCollide = useCallback(async () => {
     if (!problem || colliding) {return;}
@@ -972,55 +991,6 @@ export default function ProblemDetailScreen() {
         <Text style={s.collideErrorText}>{collideError}</Text>
       )}
 
-      {/* ADD NOTE */}
-      <TouchableOpacity
-        style={s.addNoteBtn}
-        onPress={() => {
-          setAddingNote(v => {
-            if (!v) {setTimeout(() => noteRef.current?.focus(), 80);}
-            return !v;
-          });
-        }}>
-        <Text style={s.addNoteText}>{addingNote ? 'CANCEL NOTE' : 'ADD NOTE'}</Text>
-      </TouchableOpacity>
-
-      {/* Inline note input */}
-      {addingNote && (
-        <View style={s.noteInputWrap}>
-          <TextInput
-            ref={noteRef}
-            style={s.noteInput}
-            value={noteText}
-            onChangeText={setNoteText}
-            placeholder="Write a note..."
-            placeholderTextColor={C.muted}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-          />
-          <View style={s.noteActions}>
-            <TouchableOpacity
-              onPress={() => {
-                setAddingNote(false);
-                setNoteText('');
-              }}>
-              <Text style={s.cancelText}>DISCARD</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={handleSaveNote}
-              disabled={!noteText.trim() || savingNote}>
-              <Text
-                style={[
-                  s.saveNoteText,
-                  (!noteText.trim() || savingNote) && s.saveNoteDisabled,
-                ]}>
-                {savingNote ? 'SAVING...' : 'SAVE NOTE'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
       {/* HOW DID THIS END? — only when not already in a closing stage */}
       {!isClosing && (
         <TouchableOpacity style={s.howEndWrap} onPress={handleHowDidEnd}>
@@ -1088,17 +1058,8 @@ export default function ProblemDetailScreen() {
         />
         {/* ── Fixed action bar (inside KAV so it moves with keyboard) ── */}
         <View style={s.actionBar}>
-          {/* NOTE stub — Gap 5: floating note pill */}
-          <TouchableOpacity
-            onPress={() => {
-              setAddingNote(v => {
-                if (!v) {setTimeout(() => noteRef.current?.focus(), 80);}
-                return !v;
-              });
-              // TODO Gap 5: replace with floating note pill
-            }}>
-            <Text style={s.actionBarNote}>NOTE</Text>
-          </TouchableOpacity>
+          {/* NOTE pill — opens NoteSheet */}
+          <NoteFloatingPill onPress={() => setNoteSheetVisible(true)} />
 
           {/* Mode toggle: PROBLEM | CONCEPT | STORY */}
           <View style={s.modeToggle}>
@@ -1147,6 +1108,13 @@ export default function ProblemDetailScreen() {
         keyInsightCards={keyInsightCards}
         onClose={() => setClosingSheetVisible(false)}
         onSaved={handleSaved}
+      />
+
+      {/* ── Note sheet (non-modal, slides up above action bar) ── */}
+      <NoteSheet
+        visible={noteSheetVisible}
+        onClose={() => setNoteSheetVisible(false)}
+        onSave={handleSaveNoteFromSheet}
       />
 
       {/* ── Saved confirmation ── */}
@@ -1546,13 +1514,6 @@ const s = StyleSheet.create({
     borderTopWidth:    1,
     borderTopColor:    C.border,
     gap:               10,
-  },
-  actionBarNote: {
-    fontFamily:    'monospace',
-    fontSize:      9,
-    letterSpacing: 2,
-    color:         C.muted,
-    textTransform: 'uppercase',
   },
   modeToggle: {
     flex:          1,
