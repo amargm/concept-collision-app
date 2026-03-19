@@ -27,6 +27,7 @@ import type {RootStackParamList} from '../../App';
 import type {CollisionResult, Collision, CollisionMode} from '../hooks/useCollision';
 import StagePicker from '../components/StagePicker';
 import ClosingSheet from '../components/ClosingSheet';
+import ThreadCollisionCard from '../components/ThreadCollisionCard';
 import type {Stage} from '../components/StagePicker';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -260,10 +261,12 @@ function CompactDomainCard({
 // ── Thread item: COLLISION ────────────────────────────────────────────────────
 function CollisionThreadCard({
   doc,
-  onPress,
+  keyInsights,
+  onToggleKeyInsight,
 }: {
   doc: CollisionDoc;
-  onPress: () => void;
+  keyInsights: Set<string>;
+  onToggleKeyInsight: (key: string) => void;
 }) {
   const cols = doc.result?.collisions ?? [];
   const narrativeDomains: string[] =
@@ -275,32 +278,31 @@ function CollisionThreadCard({
   const metaLabel = `COLLISION${modePart} · ${formatThreadDate(doc.timestamp)}`;
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      style={s.collisionCard}>
-      {/* 2px accent top bar */}
+    <View style={s.collisionCard}>
       <View style={[s.collisionBar, {backgroundColor: C.accent}]} />
       <View style={s.collisionCardContent}>
         <Text style={s.threadMetaLabel}>{metaLabel}</Text>
-        {cols.length > 0 ? (
-          <View style={s.domainGrid}>
-            {cols.map((c, i) => (
-              <CompactDomainCard
-                key={i}
-                collision={c}
-                accentColor={CARD_ACCENT_COLORS[i] ?? C.accent}
-              />
-            ))}
-          </View>
-        ) : narrativeDomains.length > 0 ? (
-          <Text style={s.narrativeDomainLine}>
-            {narrativeDomains.join(' · ')}
-          </Text>
-        ) : null}
-        <Text style={s.tapExpand}>TAP TO VIEW FULL →</Text>
+        {cols.length > 0
+          ? cols.map((col, i) => {
+              const kiKey = `${doc.id}-${i}`;
+              return (
+                <ThreadCollisionCard
+                  key={kiKey}
+                  card={col}
+                  cardIndex={i}
+                  isKeyInsight={keyInsights.has(kiKey)}
+                  onMarkKeyInsight={() => onToggleKeyInsight(kiKey)}
+                  onRemoveKeyInsight={() => onToggleKeyInsight(kiKey)}
+                />
+              );
+            })
+          : narrativeDomains.length > 0 ? (
+              <Text style={s.narrativeDomainLine}>
+                {narrativeDomains.join(' · ')}
+              </Text>
+            ) : null}
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -342,16 +344,19 @@ function CollisionLoadingItem() {
 // ── Thread item dispatcher ────────────────────────────────────────────────────
 function ThreadRow({
   item,
-  onPressCollision,
+  keyInsights,
+  onToggleKeyInsight,
 }: {
   item: ThreadItem;
-  onPressCollision: (doc: CollisionDoc) => void;
+  keyInsights: Set<string>;
+  onToggleKeyInsight: (key: string) => void;
 }) {
   if (item.kind === 'collision') {
     return (
       <CollisionThreadCard
         doc={item.doc}
-        onPress={() => onPressCollision(item.doc)}
+        keyInsights={keyInsights}
+        onToggleKeyInsight={onToggleKeyInsight}
       />
     );
   }
@@ -385,6 +390,7 @@ export default function ProblemDetailScreen() {
   const [collideMode, setCollideModeRaw] = useState<CollisionMode>('core');
   const [colliding, setColliding]       = useState(false);
   const [collideError, setCollideError] = useState<string | null>(null);
+  const [keyInsights, setKeyInsights]   = useState<Set<string>>(new Set<string>());
   const savedConfirmOpacity = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
 
@@ -695,15 +701,13 @@ export default function ProblemDetailScreen() {
     // retained for external use only — not used by action bar
   }, []);
 
-  const handlePressCollision = useCallback(
-    (doc: CollisionDoc) => {
-      navigation.navigate('Result', {
-        problem: doc.problem || problem?.problem || '',
-        result:  doc.result,
-      });
-    },
-    [navigation, problem],
-  );
+  const toggleKeyInsight = useCallback((key: string) => {
+    setKeyInsights(prev => {
+      const s = new Set(prev);
+      if (s.has(key)) { s.delete(key); } else { s.add(key); }
+      return s;
+    });
+  }, []);
 
   // ── Collect all unique domains across collision docs ──────────────────────
   const allDomains: string[] = [];
@@ -896,7 +900,11 @@ export default function ProblemDetailScreen() {
             item.kind === 'loading' ? 'loading' : `${item.kind}-${idx}`
           }
           renderItem={({item}) => (
-            <ThreadRow item={item} onPressCollision={handlePressCollision} />
+            <ThreadRow
+              item={item}
+              keyInsights={keyInsights}
+              onToggleKeyInsight={toggleKeyInsight}
+            />
           )}
           ListHeaderComponent={ListHeader}
           ListFooterComponent={ListFooter}
@@ -1103,11 +1111,11 @@ const s = StyleSheet.create({
     color:         C.muted,
   },
 
-  // ── Collision thread card ──
+  // ── Collision thread card wrapper ──
   collisionCard: {
     marginHorizontal: 24,
     marginBottom:     12,
-    backgroundColor:  C.card,
+    backgroundColor:  C.bg,
     borderWidth:      1,
     borderColor:      C.border,
   },
