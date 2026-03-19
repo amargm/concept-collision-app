@@ -26,6 +26,7 @@ import CollisionMapScreen from './src/screens/CollisionMapScreen';
 import WorkspaceScreen from './src/screens/WorkspaceScreen';
 import ProblemDetailScreen from './src/screens/ProblemDetailScreen';
 import NarrativeResultScreen from './src/screens/NarrativeResultScreen';
+import SearchScreen from './src/screens/SearchScreen';
 
 // ── ApiKey compat shim (HomeScreen still imports this until it's rewritten) ───
 interface ApiKeyContextType {
@@ -61,6 +62,7 @@ export type RootStackParamList = {
   Result: {problem: string; result: CollisionResult; collisionId?: string};
   NarrativeResult: {problem: string; result: NarrativeResult; collisionId?: string};
   ProblemDetail: {problemId: string};
+  Search: undefined;
   Paywall: undefined;
   CollectionDetail: {collectionId: string; name: string};
 };
@@ -206,6 +208,11 @@ export default function App() {
             <Stack.Screen
               name="ProblemDetail"
               component={ProblemDetailScreen}
+              options={{animation: 'slide_from_right'}}
+            />
+            <Stack.Screen
+              name="Search"
+              component={SearchScreen}
               options={{animation: 'slide_from_right'}}
             />
             <Stack.Screen

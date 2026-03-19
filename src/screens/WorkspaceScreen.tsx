@@ -319,7 +319,9 @@ export default function WorkspaceScreen() {
       <View style={s.header}>
         <Text style={s.headerTitle}>WORKSPACE</Text>
         <View style={s.headerRight}>
-          <Text style={s.headerSearch}>SEARCH</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Search')}>
+            <Text style={s.headerSearch}>SEARCH</Text>
+          </TouchableOpacity>
           <Text style={s.headerView}>LIST</Text>
         </View>
       </View>

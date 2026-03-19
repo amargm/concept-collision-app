@@ -77,13 +77,16 @@ export default function HistoryScreen({navigation}: Props) {
           <Text style={styles.backText}>← BACK</Text>
         </TouchableOpacity>
         <Text style={styles.title}>HISTORY</Text>
-        {history.length > 0 ? (
-          <TouchableOpacity onPress={handleClear}>
-            <Text style={styles.clearText}>CLEAR</Text>
+        <View style={styles.topRight}>
+          <TouchableOpacity onPress={() => navigation.navigate('Search')}>
+            <Text style={styles.searchText}>SEARCH</Text>
           </TouchableOpacity>
-        ) : (
-          <View style={{width: 50}} />
-        )}
+          {history.length > 0 && (
+            <TouchableOpacity onPress={handleClear}>
+              <Text style={styles.clearText}>CLEAR</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {history.length === 0 ? (
@@ -133,6 +136,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 2,
     color: COLORS.accentRed,
+  },
+  topRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  searchText: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 2,
+    color: '#888880',
+    textTransform: 'uppercase',
   },
   list: {
     paddingHorizontal: 20,
