@@ -61,26 +61,31 @@ Rules:
 - Focus on domains with strong pedagogical traditions (e.g. martial arts, apprenticeship trades, oral cultures, animal training)
 - The bridge must be actionable and specific`,
 
-  narrative: `You are a cross-domain structural pattern engine focused on narrative and story. Find how completely unrelated storytelling traditions, historical events, or cultural phenomena share the same narrative structure as the user's problem.
+  narrative: `You are a master storyteller and cross-domain pattern engine. Find 4 real historical, cultural, or mythological moments that share the exact structural pattern of the user's situation. Tell each as a vivid story.
 
-Respond ONLY with valid JSON using this exact structure:
+Respond ONLY with valid JSON. No markdown, no preamble, no explanation outside the JSON.
+
+Return this exact structure:
 {
-  "structural_essence": "One sentence: the abstract narrative pattern",
-  "collisions": [
+  "structural_essence": "One sentence: the abstract structural pattern in the user's situation",
+  "narratives": [
     {
-      "domain": "Domain name",
-      "title": "The analogous narrative in that domain",
-      "how_they_solved_it": "2-3 sentences. How this narrative played out.",
-      "bridge": "1-2 sentences. The structural story insight that maps back."
+      "domain": "Domain name (e.g. Byzantine Diplomacy, Edo Period Japan, West African Oral Tradition)",
+      "setting": "Specific place and time, 3-6 words uppercase (e.g. CONSTANTINOPLE, 1453 or THE AMAZON BASIN, 16TH CENTURY)",
+      "story": "3-4 sentences of vivid narrative prose. Name real people, places, events. Write like a storyteller, not an academic.",
+      "bridge": "1-2 sentences. The exact structural insight that maps this story back to the user's situation."
     }
   ],
-  "synthesis": "One insight about the user's situation seen through the lens of all four narrative domains."
+  "synthesis": "One powerful insight that emerges only when you see all four stories together. Reframes the user's situation."
 }
 
 Rules:
-- Exactly 4 collisions
-- Draw from mythology, historical events, indigenous oral traditions, theatrical forms, ritual structures
-- Never use modern films or novels as domains`,
+- Exactly 4 narratives
+- Draw from mythology, pre-modern history, indigenous traditions, ancient empires, oral cultures, ritual structures
+- Never use modern films, novels, or post-1900 events
+- Each setting must be specific: a real place and approximate time in uppercase
+- The story field must read as narrative prose, not an explanation
+- The bridge must be illuminating and specific to the user's situation`,
 
   chain: `You are a cross-domain structural pattern engine. The user has identified a structural essence themselves and provided domains they want explored. Your job is to find how each specified domain has addressed this exact structural pattern.
 
@@ -217,12 +222,17 @@ router.post('/', verifyAuth, async (req, res) => {
   const collisionRef = db.collection('collisions').doc(uid).collection('items').doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
 
+  // Derive domain list from the correct field depending on mode
+  const domainList = mode === 'narrative'
+    ? (result.narratives?.map((n) => n.domain) ?? [])
+    : (result.collisions?.map((c) => c.domain) ?? []);
+
   await collisionRef.set({
     problem: problem.trim(),
     result,
     timestamp: now,
     mode,
-    domains: result.collisions?.map((c) => c.domain) ?? [],
+    domains: domainList,
     structuralEssence: result.structural_essence ?? '',
     promptVersion: PROMPT_VERSION,
     bookmarked: false,

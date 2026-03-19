@@ -15,6 +15,7 @@ import {useRoute} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import {COLORS, EXAMPLE_CHIPS} from '../utils/constants';
 import {useCollision} from '../hooks/useCollision';
+import type {CollisionResult, NarrativeResult} from '../hooks/useCollision';
 import {auth, firestore} from '../services/firebase';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import type {RootStackParamList, MainTabParamList} from '../../App';
@@ -26,6 +27,13 @@ const LEARNING_CHIPS = [
   'Emergence',
   'Sunk cost fallacy',
   'Network effects',
+];
+
+const STORY_CHIPS = [
+  'Why empires fall the same way',
+  'A team losing trust in each other',
+  'A small act that became a movement',
+  'The moment of leaving something behind',
 ];
 
 // 3 animated dots + label
@@ -69,7 +77,7 @@ export default function HomeScreen({navigation}: Props) {
 
   const [problem, setProblem] = useState('');
   const [focused, setFocused] = useState(false);
-  const [mode, setMode] = useState<'core' | 'learning'>('core');
+  const [mode, setMode] = useState<'core' | 'learning' | 'narrative'>('core');
   const [savingWorkspace, setSavingWorkspace] = useState(false);
   const [workspaceSaveError, setWorkspaceSaveError] = useState<string | null>(null);
   const {collide, loading, error, limitExceeded} = useCollision();
@@ -90,7 +98,19 @@ export default function HomeScreen({navigation}: Props) {
     if (!problem.trim()) {return;}
     const res = await collide(problem.trim(), mode);
     if (res) {
-      navigation.navigate('Result', {problem: problem.trim(), result: res.result, collisionId: res.id});
+      if (mode === 'narrative') {
+        navigation.navigate('NarrativeResult', {
+          problem: problem.trim(),
+          result: res.result as NarrativeResult,
+          collisionId: res.id,
+        });
+      } else {
+        navigation.navigate('Result', {
+          problem: problem.trim(),
+          result: res.result as CollisionResult,
+          collisionId: res.id,
+        });
+      }
     }
   };
 
@@ -177,11 +197,23 @@ export default function HomeScreen({navigation}: Props) {
               CONCEPT
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeSegment, mode === 'narrative' && styles.modeSegmentActive]}
+            onPress={() => setMode('narrative')}
+            activeOpacity={0.8}>
+            <Text style={[styles.modeSegmentText, mode === 'narrative' && styles.modeSegmentTextActive]}>
+              STORY
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Input */}
         <Text style={[styles.label, focused && styles.labelFocused]}>
-          {mode === 'learning' ? 'WHAT DO YOU WANT TO UNDERSTAND' : 'DESCRIBE YOUR PROBLEM'}
+          {mode === 'narrative'
+            ? 'DESCRIBE YOUR SITUATION'
+            : mode === 'learning'
+              ? 'WHAT DO YOU WANT TO UNDERSTAND'
+              : 'DESCRIBE YOUR PROBLEM'}
         </Text>
         <TextInput
           ref={inputRef}
@@ -189,9 +221,11 @@ export default function HomeScreen({navigation}: Props) {
           value={problem}
           onChangeText={setProblem}
           placeholder={
-            mode === 'learning'
-              ? 'e.g. compound interest, entropy, feedback loops'
-              : 'Type your problem or challenge...'
+            mode === 'narrative'
+              ? 'e.g. a betrayal, a transition, a loss of momentum...'
+              : mode === 'learning'
+                ? 'e.g. compound interest, entropy, feedback loops'
+                : 'Type your problem or challenge...'
           }
           placeholderTextColor={COLORS.muted}
           multiline
@@ -241,7 +275,7 @@ export default function HomeScreen({navigation}: Props) {
 
         {/* Example chips */}
         <Text style={[styles.label, {marginTop: 30}]}>EXAMPLES</Text>
-        {(mode === 'learning' ? LEARNING_CHIPS : EXAMPLE_CHIPS).map((chip, i) => (
+        {(mode === 'learning' ? LEARNING_CHIPS : mode === 'narrative' ? STORY_CHIPS : EXAMPLE_CHIPS).map((chip, i) => (
           <TouchableOpacity
             key={i}
             style={styles.chip}

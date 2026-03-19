@@ -12,7 +12,7 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 
 import {useAuth} from './src/hooks/useAuth';
-import {CollisionResult} from './src/hooks/useCollision';
+import {CollisionResult, NarrativeResult} from './src/hooks/useCollision';
 import ErrorBoundary from './src/components/ErrorBoundary';
 
 // ── Screens ───────────────────────────────────────────────────────────────────
@@ -25,6 +25,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import CollisionMapScreen from './src/screens/CollisionMapScreen';
 import WorkspaceScreen from './src/screens/WorkspaceScreen';
 import ProblemDetailScreen from './src/screens/ProblemDetailScreen';
+import NarrativeResultScreen from './src/screens/NarrativeResultScreen';
 
 // ── ApiKey compat shim (HomeScreen still imports this until it's rewritten) ───
 interface ApiKeyContextType {
@@ -58,6 +59,7 @@ export type RootStackParamList = {
   Main: undefined;
   History: undefined;
   Result: {problem: string; result: CollisionResult; collisionId?: string};
+  NarrativeResult: {problem: string; result: NarrativeResult; collisionId?: string};
   ProblemDetail: {problemId: string};
   Paywall: undefined;
   CollectionDetail: {collectionId: string; name: string};
@@ -192,6 +194,11 @@ export default function App() {
             <Stack.Screen
               name="Result"
               component={ResultScreen}
+              options={{animation: 'slide_from_right'}}
+            />
+            <Stack.Screen
+              name="NarrativeResult"
+              component={NarrativeResultScreen}
               options={{animation: 'slide_from_right'}}
             />
 

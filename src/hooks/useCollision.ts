@@ -48,6 +48,19 @@ export interface CollisionResult {
   synthesis: string;
 }
 
+export interface NarrativeItem {
+  domain: string;
+  setting: string;
+  story: string;
+  bridge: string;
+}
+
+export interface NarrativeResult {
+  structural_essence: string;
+  narratives: NarrativeItem[];
+  synthesis: string;
+}
+
 export type CollisionMode = 'core' | 'learning' | 'narrative' | 'chain';
 
 export function useCollision() {
@@ -102,15 +115,19 @@ export function useCollision() {
       }
 
       const body = await response.json();
-      const data: CollisionResult = body.result ?? body;
+      const data = body.result ?? body;
 
-      if (
-        !data.structural_essence ||
-        !Array.isArray(data.collisions) ||
-        data.collisions.length !== 4 ||
-        !data.synthesis
-      ) {
+      if (!data.structural_essence || !data.synthesis) {
         throw new Error('Unexpected response shape from server');
+      }
+      if (mode === 'narrative') {
+        if (!Array.isArray(data.narratives) || data.narratives.length === 0) {
+          throw new Error('Unexpected response shape from server');
+        }
+      } else {
+        if (!Array.isArray(data.collisions) || data.collisions.length !== 4) {
+          throw new Error('Unexpected response shape from server');
+        }
       }
 
       return { id: body.id ?? '', result: data };
@@ -124,7 +141,7 @@ export function useCollision() {
   };
 
   return {collide, loading, error, limitExceeded} as {
-    collide: (problem: string, mode: CollisionMode, extra?: Record<string, any>) => Promise<{id: string; result: CollisionResult} | null>;
+    collide: (problem: string, mode: CollisionMode, extra?: Record<string, any>) => Promise<{id: string; result: CollisionResult | NarrativeResult} | null>;
     loading: boolean;
     error: string | null;
     limitExceeded: boolean;
