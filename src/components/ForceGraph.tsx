@@ -23,6 +23,7 @@ export interface FGEdge {
   source: string;
   target: string;
   weight: number;
+  color?:  string;  // optional override; defaults to '#333333'
 }
 
 interface Props {
@@ -236,7 +237,7 @@ export default function ForceGraph({
                 key={`e-${i}`}
                 x1={sp.x} y1={sp.y}
                 x2={tp.x} y2={tp.y}
-                stroke="#333333"
+                stroke={edge.color ?? '#333333'}
                 strokeWidth={1}
                 opacity={opacity}
               />

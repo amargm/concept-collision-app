@@ -7,6 +7,7 @@ import {
   ActionSheetIOS,
   Alert,
   Animated,
+  Dimensions,
   FlatList,
   Platform,
   SafeAreaView,
@@ -20,8 +21,14 @@ import {
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {auth, firestore} from '../services/firebase';
 import type {RootStackParamList} from '../../App';
+import ForceGraph from '../components/ForceGraph';
+import type {FGNode, FGEdge} from '../components/ForceGraph';
+
+const {width: SW, height: SH} = Dimensions.get('window');
+const DEFAULT_VIEW_KEY = 'workspace_default_view';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -93,6 +100,14 @@ function domainCategory(domain: string): string {
   return 'Other';
 }
 
+// ── Link type edge colours ────────────────────────────────────────────────────
+const LINK_EDGE_COLOR: Record<string, string> = {
+  sub_problem:  '#f06464',
+  blocking:     '#f06464',
+  related:      '#888880',
+  spawned_from: '#64c8f0',
+};
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Problem {
   id: string;
@@ -103,6 +118,8 @@ interface Problem {
   collisionIds: string[];
   domains: string[];
   createdAt: any;
+  linkedProblemIds?: string[];
+  linkTypes?: Record<string, string>;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -208,11 +225,35 @@ function ProblemCard({item, onPress, onLongPress}: {
 }
 
 // ── Main screen ───────────────────────────────────────────────────────────────
+const SHEET_H = 280;
+
 export default function WorkspaceScreen() {
   const navigation = useNavigation<NavProp>();
-  const [problems,  setProblems]  = useState<Problem[]>([]);
-  const [loading,   setLoading]   = useState(true);
+  const [problems,     setProblems]     = useState<Problem[]>([]);
+  const [loading,      setLoading]      = useState(true);
   const [activeFilter, setActiveFilter] = useState<Stage | 'all'>('all');
+  const [viewMode,     setViewMode]     = useState<'list' | 'map'>('list');
+  const [selectedNode, setSelectedNode] = useState<Problem | null>(null);
+
+  // Bottom sheet for map node tap
+  const sheetY = useRef(new Animated.Value(SHEET_H)).current;
+
+  const openSheet = (p: Problem) => {
+    setSelectedNode(p);
+    Animated.timing(sheetY, {toValue: 0, duration: 260, useNativeDriver: true}).start();
+  };
+  const closeSheet = () => {
+    Animated.timing(sheetY, {toValue: SHEET_H, duration: 220, useNativeDriver: true}).start(
+      () => setSelectedNode(null),
+    );
+  };
+
+  // Load default view preference from AsyncStorage
+  useEffect(() => {
+    AsyncStorage.getItem(DEFAULT_VIEW_KEY).then(v => {
+      if (v === 'map') {setViewMode('map');}
+    });
+  }, []);
 
   // Subscribe to Firestore problems realtime
   useEffect(() => {
@@ -311,6 +352,36 @@ export default function WorkspaceScreen() {
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
+  // Build FGNodes + FGEdges for map view
+  const fgNodes: FGNode[] = problems.map(p => {
+    const size = Math.min(48, 24 + (p.collisionCount ?? 0) * 3);
+    return {
+      id:        p.id,
+      label:     p.problem.slice(0, 20),
+      color:     STAGE_COLOR[p.stage] ?? C.muted,
+      textColor: p.stage === 'thinking' || p.stage === 'resting' ? '#0a0a0a' : '#ffffff',
+      size,
+      data:      p,
+    };
+  });
+
+  const seenEdges = new Set<string>();
+  const fgEdges: FGEdge[] = [];
+  for (const p of problems) {
+    for (const lid of (p.linkedProblemIds ?? [])) {
+      const key = [p.id, lid].sort().join('|');
+      if (seenEdges.has(key)) {continue;}
+      seenEdges.add(key);
+      const lt = p.linkTypes?.[lid] ?? 'related';
+      fgEdges.push({
+        source: p.id,
+        target: lid,
+        weight: 1,
+        color:  LINK_EDGE_COLOR[lt] ?? '#888880',
+      });
+    }
+  }
+
   return (
     <SafeAreaView style={s.container}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
@@ -322,52 +393,70 @@ export default function WorkspaceScreen() {
           <TouchableOpacity onPress={() => navigation.navigate('Search')}>
             <Text style={s.headerSearch}>SEARCH</Text>
           </TouchableOpacity>
-          <Text style={s.headerView}>LIST</Text>
+          {/* LIST | MAP toggle */}
+          <View style={s.viewToggle}>
+            {(['list', 'map'] as const).map(mode => {
+              const active = viewMode === mode;
+              return (
+                <TouchableOpacity
+                  key={mode}
+                  style={[s.viewSeg, active && s.viewSegActive]}
+                  onPress={() => setViewMode(mode)}
+                  activeOpacity={0.7}>
+                  <Text style={[s.viewSegText, active && s.viewSegTextActive]}>
+                    {mode.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
       </View>
 
-      {/* Stage filter chips */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={s.filtersScroll}
-        contentContainerStyle={s.filtersRow}>
-        {/* ALL chip */}
-        <TouchableOpacity
-          onPress={() => setActiveFilter('all')}
-          style={[
-            s.chip,
-            activeFilter === 'all'
-              ? {backgroundColor: C.accent, borderColor: C.accent}
-              : {backgroundColor: C.surface, borderColor: C.border},
-          ]}>
-          <Text style={[
-            s.chipText,
-            {color: activeFilter === 'all' ? '#0a0a0a' : C.muted},
-          ]}>ALL</Text>
-        </TouchableOpacity>
+      {/* Stage filter chips — list view only */}
+      {viewMode === 'list' && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={s.filtersScroll}
+          contentContainerStyle={s.filtersRow}>
+          {/* ALL chip */}
+          <TouchableOpacity
+            onPress={() => setActiveFilter('all')}
+            style={[
+              s.chip,
+              activeFilter === 'all'
+                ? {backgroundColor: C.accent, borderColor: C.accent}
+                : {backgroundColor: C.surface, borderColor: C.border},
+            ]}>
+            <Text style={[
+              s.chipText,
+              {color: activeFilter === 'all' ? '#0a0a0a' : C.muted},
+            ]}>ALL</Text>
+          </TouchableOpacity>
 
-        {STAGES.map(stage => {
-          const isActive = activeFilter === stage;
-          const fillColor = STAGE_COLOR[stage];
-          return (
-            <TouchableOpacity
-              key={stage}
-              onPress={() => setActiveFilter(stage)}
-              style={[
-                s.chip,
-                isActive
-                  ? {backgroundColor: fillColor, borderColor: fillColor}
-                  : {backgroundColor: C.surface, borderColor: C.border},
-              ]}>
-              <Text style={[
-                s.chipText,
-                {color: isActive ? STAGE_TEXT_ON_FILL[stage] : C.muted},
-              ]}>{STAGE_LABELS[stage]}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+          {STAGES.map(stage => {
+            const isActive = activeFilter === stage;
+            const fillColor = STAGE_COLOR[stage];
+            return (
+              <TouchableOpacity
+                key={stage}
+                onPress={() => setActiveFilter(stage)}
+                style={[
+                  s.chip,
+                  isActive
+                    ? {backgroundColor: fillColor, borderColor: fillColor}
+                    : {backgroundColor: C.surface, borderColor: C.border},
+                ]}>
+                <Text style={[
+                  s.chipText,
+                  {color: isActive ? STAGE_TEXT_ON_FILL[stage] : C.muted},
+                ]}>{STAGE_LABELS[stage]}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {/* Content */}
       {loading ? (
@@ -382,7 +471,59 @@ export default function WorkspaceScreen() {
             </Text>
           </View>
         </View>
+      ) : viewMode === 'map' ? (
+        // ── MAP view ──────────────────────────────────────────────────────
+        <View style={{flex: 1}}>
+          <ForceGraph
+            nodes={fgNodes}
+            edges={fgEdges}
+            onNodeTap={fgNode => openSheet(fgNode.data as Problem)}
+            onEmptyTap={closeSheet}
+            width={SW}
+            height={SH - 130}
+            selectedId={selectedNode?.id}
+          />
+          {/* Node summary bottom sheet */}
+          <Animated.View
+            style={[s.sheet, {transform: [{translateY: sheetY}]}]}
+            pointerEvents={selectedNode ? 'auto' : 'none'}>
+            {selectedNode && (
+              <>
+                <View style={s.sheetHandle} />
+                <View style={s.sheetStageRow}>
+                  <View style={[s.sheetStageDot, {backgroundColor: STAGE_COLOR[selectedNode.stage] ?? C.muted}]} />
+                  <Text style={s.sheetStageLabel}>
+                    {STAGE_LABELS[selectedNode.stage] ?? selectedNode.stage.toUpperCase()}
+                  </Text>
+                  <View style={s.flex1} />
+                  <TouchableOpacity onPress={closeSheet} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                    <Text style={s.sheetClose}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={s.sheetProbText} numberOfLines={3}>{selectedNode.problem}</Text>
+                <View style={s.sheetDivider} />
+                <View style={s.sheetMetaRow}>
+                  <Text style={s.sheetMetaLabel}>COLLISIONS</Text>
+                  <Text style={s.sheetMetaValue}>{selectedNode.collisionCount}</Text>
+                </View>
+                <View style={s.sheetMetaRow}>
+                  <Text style={s.sheetMetaLabel}>STAGE</Text>
+                  <Text style={s.sheetMetaValue}>{STAGE_LABELS[selectedNode.stage]}</Text>
+                </View>
+                <TouchableOpacity
+                  style={s.openProbBtn}
+                  onPress={() => {
+                    closeSheet();
+                    navigation.navigate('ProblemDetail', {problemId: selectedNode.id});
+                  }}>
+                  <Text style={s.openProbBtnText}>OPEN PROBLEM</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </Animated.View>
+        </View>
       ) : (
+        // ── LIST view ─────────────────────────────────────────────────────
         <FlatList
           data={filtered}
           keyExtractor={item => item.id}
@@ -439,11 +580,29 @@ const s = StyleSheet.create({
     letterSpacing: 2,
     color: C.muted,
   },
-  headerView: {
+  // LIST | MAP toggle
+  viewToggle: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  viewSeg: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: 'transparent',
+  },
+  viewSegActive: {
+    backgroundColor: C.accent,
+  },
+  viewSegText: {
     fontFamily: 'monospace',
     fontSize: 9,
     letterSpacing: 2,
-    color: C.accent,
+    color: C.muted,
+    textTransform: 'uppercase',
+  },
+  viewSegTextActive: {
+    color: '#0a0a0a',
   },
 
   // Filter chips
@@ -596,5 +755,93 @@ const s = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 2,
     color: C.muted,
+  },
+
+  // ── Map node bottom sheet ──
+  flex1: {flex: 1},
+  sheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: SHEET_H,
+    backgroundColor: C.card,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 24,
+  },
+  sheetHandle: {
+    width: 32,
+    height: 2,
+    backgroundColor: C.border,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  sheetStageRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  sheetStageDot: {
+    width: 8,
+    height: 8,
+  },
+  sheetStageLabel: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 3,
+    color: C.label,
+    textTransform: 'uppercase',
+  },
+  sheetClose: {
+    fontFamily: 'monospace',
+    fontSize: 14,
+    color: C.mutedLight,
+  },
+  sheetProbText: {
+    fontFamily: 'monospace',
+    fontSize: 13,
+    color: C.text,
+    lineHeight: 20,
+    marginBottom: 14,
+  },
+  sheetDivider: {
+    height: 1,
+    backgroundColor: C.border,
+    marginBottom: 12,
+  },
+  sheetMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  sheetMetaLabel: {
+    fontFamily: 'monospace',
+    fontSize: 9,
+    letterSpacing: 3,
+    color: C.label,
+    textTransform: 'uppercase',
+  },
+  sheetMetaValue: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    color: C.text,
+  },
+  openProbBtn: {
+    backgroundColor: C.accent,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  openProbBtnText: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 3,
+    color: '#0a0a0a',
+    textTransform: 'uppercase',
   },
 });

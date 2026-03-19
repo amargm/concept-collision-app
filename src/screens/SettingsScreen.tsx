@@ -22,6 +22,7 @@ const APP_VERSION: string = require('../../package.json').version;
 const FREE_LIMIT = 10;
 const NOTIF_TOGGLE_KEY = 'daily_collision_enabled';
 const NOTIF_TIME_KEY = 'daily_collision_time';
+const WORKSPACE_VIEW_KEY = 'workspace_default_view';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -68,6 +69,7 @@ export default function SettingsScreen() {
   const [notifEnabled, setNotifEnabled] = useState(false);
   const [notifHour, setNotifHour] = useState(9);
   const [notifMinute, setNotifMinute] = useState(0);
+  const [workspaceDefaultView, setWorkspaceDefaultView] = useState<'list' | 'map'>('list');
 
   useEffect(() => {
     if (!user) {return;}
@@ -90,6 +92,10 @@ export default function SettingsScreen() {
         if (!isNaN(h)) {setNotifHour(h);}
         if (!isNaN(m)) {setNotifMinute(m);}
       }
+    });
+
+    AsyncStorage.getItem(WORKSPACE_VIEW_KEY).then(v => {
+      if (v === 'map' || v === 'list') {setWorkspaceDefaultView(v);}
     });
 
     return unsub;
@@ -138,6 +144,19 @@ export default function SettingsScreen() {
           onPress={() => navigation.navigate('History')}>
           <Text style={s.navRowLabel}>HISTORY</Text>
           <Text style={s.rowArrow}>→</Text>
+        </TouchableOpacity>
+
+        <View style={s.divider} />
+
+        <TouchableOpacity
+          style={s.rowBetween}
+          onPress={() => {
+            const next = workspaceDefaultView === 'list' ? 'map' : 'list';
+            setWorkspaceDefaultView(next);
+            AsyncStorage.setItem(WORKSPACE_VIEW_KEY, next);
+          }}>
+          <Text style={s.rowLabel}>DEFAULT WORKSPACE VIEW</Text>
+          <Text style={s.settingValue}>{workspaceDefaultView.toUpperCase()}</Text>
         </TouchableOpacity>
 
         {/* ── ACCOUNT ────────────────────────────────────────────────────── */}
@@ -451,6 +470,13 @@ const s = StyleSheet.create({
     fontSize: 11,
     color: '#555550',
     letterSpacing: 2,
+  },
+  settingValue: {
+    fontFamily: 'monospace',
+    fontSize: 11,
+    letterSpacing: 2,
+    color: '#c8f064',
+    textTransform: 'uppercase',
   },
 
   bottomSpacer: {
