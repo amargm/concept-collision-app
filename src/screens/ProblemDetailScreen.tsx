@@ -7,6 +7,7 @@ import {
   Animated,
   FlatList,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Platform,
   ScrollView,
   StatusBar,
@@ -266,12 +267,16 @@ function CollisionThreadCard({
   doc,
   collisionIndex,
   keyInsights,
+  expandedCards,
   onToggleKeyInsight,
+  onToggleExpand,
 }: {
   doc: CollisionDoc;
   collisionIndex: number;
   keyInsights: Set<string>;
+  expandedCards: Set<string>;
   onToggleKeyInsight: (key: string) => void;
+  onToggleExpand: (key: string) => void;
 }) {
   const cols = doc.result?.collisions ?? [];
   const narrativeDomains: string[] =
@@ -304,6 +309,8 @@ function CollisionThreadCard({
                 card={col}
                 cardIndex={i}
                 isKeyInsight={keyInsights.has(kiKey)}
+                expanded={expandedCards.has(kiKey)}
+                onToggleExpand={() => onToggleExpand(kiKey)}
                 onMarkKeyInsight={() => onToggleKeyInsight(kiKey)}
                 onRemoveKeyInsight={() => onToggleKeyInsight(kiKey)}
               />
@@ -357,11 +364,15 @@ function CollisionLoadingItem() {
 function ThreadRow({
   item,
   keyInsights,
+  expandedCards,
   onToggleKeyInsight,
+  onToggleExpand,
 }: {
   item: ThreadItem;
   keyInsights: Set<string>;
+  expandedCards: Set<string>;
   onToggleKeyInsight: (key: string) => void;
+  onToggleExpand: (key: string) => void;
 }) {
   if (item.kind === 'collision') {
     return (
@@ -369,7 +380,9 @@ function ThreadRow({
         doc={item.doc}
         collisionIndex={item.collisionIndex}
         keyInsights={keyInsights}
+        expandedCards={expandedCards}
         onToggleKeyInsight={onToggleKeyInsight}
+        onToggleExpand={onToggleExpand}
       />
     );
   }
@@ -404,6 +417,7 @@ export default function ProblemDetailScreen() {
   const [colliding, setColliding]       = useState(false);
   const [collideError, setCollideError] = useState<string | null>(null);
   const [keyInsights, setKeyInsights]   = useState<Set<string>>(new Set<string>());
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set<string>());
   const savedConfirmOpacity = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
 
@@ -733,6 +747,15 @@ export default function ProblemDetailScreen() {
     // retained for external use only — not used by action bar
   }, []);
 
+  const toggleExpand = useCallback((kiKey: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      if (next.has(kiKey)) { next.delete(kiKey); } else { next.add(kiKey); }
+      return next;
+    });
+  }, []);
+
   const toggleKeyInsight = useCallback((key: string) => {
     // Optimistic local update
     setKeyInsights(prev => {
@@ -817,6 +840,38 @@ export default function ProblemDetailScreen() {
   const isClosing      = problem.stage === 'clear' || problem.stage === 'let go';
   const sourceLabel    = problem.source === 'elevated' ? 'ELEVATED' : 'QUEUED';
 
+  // ── Render-time lookups for key insight mini-cards ────────────────────────
+  // kiKey → {domain, title, cardIndex}
+  const kiKeyData = new Map<string, {domain: string; title: string; cardIndex: number; collisionId: string}>();
+  for (const doc of collisionDocs) {
+    for (let i = 0; i < (doc.result?.collisions ?? []).length; i++) {
+      const col = doc.result.collisions[i];
+      kiKeyData.set(`${doc.id}-${i}`, {domain: col.domain, title: col.title, cardIndex: i, collisionId: doc.id});
+    }
+  }
+  // collisionId → FlatList index
+  const collisionIdToIdx = new Map<string, number>();
+  thread.forEach((item, idx) => {
+    if (item.kind === 'collision') {collisionIdToIdx.set(item.doc.id, idx);}
+  });
+
+  const scrollToAndExpand = (kiKey: string) => {
+    const lastDash = kiKey.lastIndexOf('-');
+    const collisionId = kiKey.slice(0, lastDash);
+    const idx = collisionIdToIdx.get(collisionId);
+    if (idx !== undefined) {
+      try {
+        flatListRef.current?.scrollToIndex({index: idx, animated: true, viewOffset: 20});
+      } catch {}
+    }
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      next.add(kiKey);
+      return next;
+    });
+  };
+
   // ── FlatList header ───────────────────────────────────────────────────────
   const ListHeader = (
     <>
@@ -841,6 +896,45 @@ export default function ProblemDetailScreen() {
             <DomainTag key={i} domain={d} />
           ))}
         </ScrollView>
+      )}
+
+      {/* KEY INSIGHTS summary — only when at least one insight is marked */}
+      {keyInsights.size > 0 && (
+        <>
+          <View style={s.kiHeaderRow}>
+            <View style={s.kiHeaderLine} />
+            <Text style={s.kiHeaderLabel}>KEY INSIGHTS</Text>
+            <View style={s.kiHeaderLine} />
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={s.kiScroll}
+            contentContainerStyle={s.kiScrollContent}>
+            {Array.from(keyInsights).map(kiKey => {
+              const data = kiKeyData.get(kiKey);
+              if (!data) {return null;}
+              const accentColor = CARD_ACCENT_COLORS[data.cardIndex] ?? C.accent;
+              const catColor    = CATEGORY_COLORS[domainCategory(data.domain)] ?? C.label;
+              const truncTitle  = data.title.length > 40
+                ? data.title.slice(0, 40) + '…'
+                : data.title;
+              return (
+                <TouchableOpacity
+                  key={kiKey}
+                  style={[s.kiMiniCard, {borderLeftColor: accentColor}]}
+                  onPress={() => scrollToAndExpand(kiKey)}
+                  activeOpacity={0.75}>
+                  <Text style={s.kiStar}>★</Text>
+                  <Text style={[s.kiDomain, {color: catColor}]} numberOfLines={1}>
+                    {data.domain.toUpperCase()}
+                  </Text>
+                  <Text style={s.kiTitle} numberOfLines={2}>{truncTitle}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </>
       )}
 
       {/* Thread label */}
@@ -962,7 +1056,9 @@ export default function ProblemDetailScreen() {
             <ThreadRow
               item={item}
               keyInsights={keyInsights}
+              expandedCards={expandedCards}
               onToggleKeyInsight={toggleKeyInsight}
+              onToggleExpand={toggleExpand}
             />
           )}
           ListHeaderComponent={ListHeader}
@@ -1499,5 +1595,60 @@ const s = StyleSheet.create({
     letterSpacing: 1.5,
     color:         C.mutedLight,
     marginBottom:  10,
+  },
+
+  // ── KEY INSIGHTS header row + mini-card strip ──
+  kiHeaderRow: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    paddingHorizontal: 24,
+    marginTop:       20,
+    marginBottom:    10,
+  },
+  kiHeaderLine: {
+    flex:            1,
+    height:          1,
+    backgroundColor: C.border,
+  },
+  kiHeaderLabel: {
+    fontFamily:    'monospace',
+    fontSize:      9,
+    letterSpacing: 3,
+    color:         C.accent,
+    textTransform: 'uppercase',
+    paddingHorizontal: 10,
+  },
+  kiScroll: {
+    marginBottom: 8,
+  },
+  kiScrollContent: {
+    paddingHorizontal: 24,
+    gap:           8,
+    paddingVertical: 4,
+  },
+  kiMiniCard: {
+    backgroundColor: C.bg,
+    borderLeftWidth: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    width:         140,
+  },
+  kiStar: {
+    fontFamily:  'monospace',
+    fontSize:    11,
+    color:       C.accent,
+    marginBottom: 3,
+  },
+  kiDomain: {
+    fontFamily:    'monospace',
+    fontSize:      9,
+    letterSpacing: 1.5,
+    marginBottom:  4,
+  },
+  kiTitle: {
+    fontFamily: 'monospace',
+    fontSize:   11,
+    color:      C.text,
+    lineHeight: 16,
   },
 });

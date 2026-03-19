@@ -3,7 +3,7 @@
  * problem thread. Collapsed by default; tap to expand full body + bridge.
  * Long press toggles key-insight mark.
  */
-import React, {useState} from 'react';
+import React from 'react';
 import {
   LayoutAnimation,
   Platform,
@@ -56,6 +56,8 @@ export interface ThreadCollisionCardProps {
   };
   cardIndex:          number;
   isKeyInsight:       boolean;
+  expanded:           boolean;
+  onToggleExpand:     () => void;
   onMarkKeyInsight:   () => void;
   onRemoveKeyInsight: () => void;
 }
@@ -65,17 +67,17 @@ export default function ThreadCollisionCard({
   card,
   cardIndex,
   isKeyInsight,
+  expanded,
+  onToggleExpand,
   onMarkKeyInsight,
   onRemoveKeyInsight,
 }: ThreadCollisionCardProps) {
-  const [expanded, setExpanded] = useState(false);
-
   const accentColor = CARD_ACCENT[cardIndex] ?? '#c8f064';
   const catColor    = CATEGORY_COLORS[domainCategory(card.domain)] ?? '#888880';
 
   const toggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setExpanded(v => !v);
+    onToggleExpand();
   };
 
   const handleLongPress = () => {
