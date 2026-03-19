@@ -685,20 +685,26 @@ export default function ProblemDetailScreen() {
   const handleSaveNoteFromSheet = useCallback(async (text: string) => {
     const user = auth().currentUser;
     if (!user) {throw new Error('Not authenticated');}
-    await firestore()
-      .collection('problems')
-      .doc(user.uid)
-      .collection('items')
-      .doc(problemId)
-      .collection('notes')
-      .add({
-        text,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const token     = await user.getIdToken();
+    const noteId    = `note_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const createdAt = new Date().toISOString();
+
+    const res = await fetch(`${BACKEND_URL}/workspace/${problemId}/note`, {
+      method:  'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization:  `Bearer ${token}`,
+      },
+      body: JSON.stringify({noteId, text, createdAt}),
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => ({}));
+      throw new Error(b?.error ?? `Server error ${res.status}`);
+    }
     // Scroll to end after brief delay to let Firestore listener update notes state
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({animated: true});
-    }, 300);
+    }, 350);
   }, [problemId]);
 
   const handleInlineCollide = useCallback(async () => {

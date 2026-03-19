@@ -10,10 +10,11 @@ const app = express();
 app.use(express.json());
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/collide', require('./routes/collide'));
-app.use('/map',     require('./routes/map'));
-app.use('/', require('./routes/usage'));
-app.use('/daily', require('./routes/daily'));
+app.use('/collide',    require('./routes/collide'));
+app.use('/map',        require('./routes/map'));
+app.use('/workspace',  require('./routes/workspace'));
+app.use('/',           require('./routes/usage'));
+app.use('/daily',      require('./routes/daily'));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
