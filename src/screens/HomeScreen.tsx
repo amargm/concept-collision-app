@@ -21,6 +21,13 @@ import type {RootStackParamList, MainTabParamList} from '../../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
+const LEARNING_CHIPS = [
+  'Feedback loops',
+  'Emergence',
+  'Sunk cost fallacy',
+  'Network effects',
+];
+
 // 3 animated dots + label
 function LoadingDots() {
   const dots = [useRef(new Animated.Value(0.4)).current,
@@ -62,6 +69,7 @@ export default function HomeScreen({navigation}: Props) {
 
   const [problem, setProblem] = useState('');
   const [focused, setFocused] = useState(false);
+  const [mode, setMode] = useState<'core' | 'learning'>('core');
   const [savingWorkspace, setSavingWorkspace] = useState(false);
   const [workspaceSaveError, setWorkspaceSaveError] = useState<string | null>(null);
   const {collide, loading, error, limitExceeded} = useCollision();
@@ -79,8 +87,8 @@ export default function HomeScreen({navigation}: Props) {
   }, [route.params?.prefillProblem]);
 
   const handleCollide = async () => {
-    if (!problem.trim()) return;
-    const res = await collide(problem.trim(), 'core');
+    if (!problem.trim()) {return;}
+    const res = await collide(problem.trim(), mode);
     if (res) {
       navigation.navigate('Result', {problem: problem.trim(), result: res.result, collisionId: res.id});
     }
@@ -151,14 +159,40 @@ export default function HomeScreen({navigation}: Props) {
           </View>
         </View>
 
+        {/* Mode toggle */}
+        <View style={styles.modeToggle}>
+          <TouchableOpacity
+            style={[styles.modeSegment, mode === 'core' && styles.modeSegmentActive]}
+            onPress={() => setMode('core')}
+            activeOpacity={0.8}>
+            <Text style={[styles.modeSegmentText, mode === 'core' && styles.modeSegmentTextActive]}>
+              PROBLEM
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeSegment, mode === 'learning' && styles.modeSegmentActive]}
+            onPress={() => setMode('learning')}
+            activeOpacity={0.8}>
+            <Text style={[styles.modeSegmentText, mode === 'learning' && styles.modeSegmentTextActive]}>
+              CONCEPT
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {/* Input */}
-        <Text style={styles.label}>DESCRIBE YOUR PROBLEM</Text>
+        <Text style={[styles.label, focused && styles.labelFocused]}>
+          {mode === 'learning' ? 'WHAT DO YOU WANT TO UNDERSTAND' : 'DESCRIBE YOUR PROBLEM'}
+        </Text>
         <TextInput
           ref={inputRef}
           style={[styles.input, focused && styles.inputFocused]}
           value={problem}
           onChangeText={setProblem}
-          placeholder="Type your problem or challenge..."
+          placeholder={
+            mode === 'learning'
+              ? 'e.g. compound interest, entropy, feedback loops'
+              : 'Type your problem or challenge...'
+          }
           placeholderTextColor={COLORS.muted}
           multiline
           numberOfLines={6}
@@ -207,7 +241,7 @@ export default function HomeScreen({navigation}: Props) {
 
         {/* Example chips */}
         <Text style={[styles.label, {marginTop: 30}]}>EXAMPLES</Text>
-        {EXAMPLE_CHIPS.map((chip, i) => (
+        {(mode === 'learning' ? LEARNING_CHIPS : EXAMPLE_CHIPS).map((chip, i) => (
           <TouchableOpacity
             key={i}
             style={styles.chip}
@@ -305,6 +339,34 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     marginBottom: 10,
     textTransform: 'uppercase',
+  },
+  labelFocused: {
+    color: '#c8f064',
+  },
+  modeToggle: {
+    flexDirection: 'row',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#222222',
+  },
+  modeSegment: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#111111',
+  },
+  modeSegmentActive: {
+    backgroundColor: '#c8f064',
+  },
+  modeSegmentText: {
+    fontFamily: 'monospace',
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: '#555550',
+  },
+  modeSegmentTextActive: {
+    color: '#0a0a0a',
   },
   input: {
     borderWidth: 1,
