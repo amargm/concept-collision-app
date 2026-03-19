@@ -20,9 +20,11 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import type {RouteProp} from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {auth, firestore} from '../services/firebase';
+import {BACKEND_URL} from '../utils/constants';
 import type {RootStackParamList} from '../../App';
-import type {CollisionResult, Collision} from '../hooks/useCollision';
+import type {CollisionResult, Collision, CollisionMode} from '../hooks/useCollision';
 import StagePicker from '../components/StagePicker';
 import ClosingSheet from '../components/ClosingSheet';
 import type {Stage} from '../components/StagePicker';
@@ -124,8 +126,9 @@ interface ProblemDoc {
 interface CollisionDoc {
   id: string;
   problem: string;
-  result: CollisionResult;
+  result: CollisionResult & {narratives?: {domain: string; setting: string; story: string; bridge: string}[]};
   timestamp: any;
+  mode?: string;
 }
 
 interface NoteDoc {
@@ -144,7 +147,8 @@ interface StageEventDoc {
 type ThreadItem =
   | {kind: 'collision';    sortTs: number; doc: CollisionDoc}
   | {kind: 'note';         sortTs: number; doc: NoteDoc}
-  | {kind: 'stage_change'; sortTs: number; doc: StageEventDoc};
+  | {kind: 'stage_change'; sortTs: number; doc: StageEventDoc}
+  | {kind: 'loading';      sortTs: number; id: string};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function tsToMs(ts: any): number {
@@ -262,6 +266,14 @@ function CollisionThreadCard({
   onPress: () => void;
 }) {
   const cols = doc.result?.collisions ?? [];
+  const narrativeDomains: string[] =
+    doc.mode === 'narrative'
+      ? (doc.result?.narratives?.map(n => n.domain) ?? [])
+      : [];
+
+  const modePart = doc.mode && doc.mode !== 'core' ? ` · ${doc.mode.toUpperCase()} MODE` : '';
+  const metaLabel = `COLLISION${modePart} · ${formatThreadDate(doc.timestamp)}`;
+
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -270,19 +282,22 @@ function CollisionThreadCard({
       {/* 2px accent top bar */}
       <View style={[s.collisionBar, {backgroundColor: C.accent}]} />
       <View style={s.collisionCardContent}>
-        <Text style={s.threadMetaLabel}>
-          COLLISION · {formatThreadDate(doc.timestamp)}
-        </Text>
-        {/* 2×2 grid of compact domain cards */}
-        <View style={s.domainGrid}>
-          {cols.map((c, i) => (
-            <CompactDomainCard
-              key={i}
-              collision={c}
-              accentColor={CARD_ACCENT_COLORS[i] ?? C.accent}
-            />
-          ))}
-        </View>
+        <Text style={s.threadMetaLabel}>{metaLabel}</Text>
+        {cols.length > 0 ? (
+          <View style={s.domainGrid}>
+            {cols.map((c, i) => (
+              <CompactDomainCard
+                key={i}
+                collision={c}
+                accentColor={CARD_ACCENT_COLORS[i] ?? C.accent}
+              />
+            ))}
+          </View>
+        ) : narrativeDomains.length > 0 ? (
+          <Text style={s.narrativeDomainLine}>
+            {narrativeDomains.join(' · ')}
+          </Text>
+        ) : null}
         <Text style={s.tapExpand}>TAP TO VIEW FULL →</Text>
       </View>
     </TouchableOpacity>
@@ -312,6 +327,18 @@ function StageChangeMarker({doc}: {doc: StageEventDoc}) {
   );
 }
 
+// ── Thread item: COLLISION LOADING ───────────────────────────────────────────
+function CollisionLoadingItem() {
+  return (
+    <View style={[s.collisionCard, {marginBottom: 12}]}>
+      <View style={[s.collisionBar, {backgroundColor: C.accent}]} />
+      <View style={[s.collisionCardContent, {alignItems: 'center', paddingVertical: 28}]}>
+        <LoadingDots label="THINKING..." />
+      </View>
+    </View>
+  );
+}
+
 // ── Thread item dispatcher ────────────────────────────────────────────────────
 function ThreadRow({
   item,
@@ -330,6 +357,9 @@ function ThreadRow({
   }
   if (item.kind === 'note') {
     return <NoteThreadCard doc={item.doc} />;
+  }
+  if (item.kind === 'loading') {
+    return <CollisionLoadingItem />;
   }
   return <StageChangeMarker doc={item.doc} />;
 }
@@ -352,9 +382,28 @@ export default function ProblemDetailScreen() {
   const [stagePickerVisible, setStagePickerVisible]   = useState(false);
   const [closingSheetVisible, setClosingSheetVisible] = useState(false);
   const [closingTargetStage, setClosingTargetStage]   = useState<Stage>('clear');
+  const [collideMode, setCollideModeRaw] = useState<CollisionMode>('core');
+  const [colliding, setColliding]       = useState(false);
+  const [collideError, setCollideError] = useState<string | null>(null);
   const savedConfirmOpacity = useRef(new Animated.Value(0)).current;
+  const flatListRef = useRef<FlatList>(null);
 
   const noteRef = useRef<TextInput>(null);
+
+  // Persist collide mode across sessions
+  const setCollideMode = useCallback((m: CollisionMode) => {
+    setCollideModeRaw(m);
+    AsyncStorage.setItem('workspace_collide_mode', m);
+  }, []);
+
+  useEffect(() => {
+    AsyncStorage.getItem('workspace_collide_mode').then(v => {
+      if (v === 'core' || v === 'learning' || v === 'narrative') {
+        setCollideModeRaw(v);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Subscribe to problem doc ──────────────────────────────────────────────
   useEffect(() => {
@@ -500,6 +549,11 @@ export default function ProblemDetailScreen() {
     })),
   ].sort((a, b) => a.sortTs - b.sortTs);
 
+  // Append inline loading sentinel when a collide is in-flight
+  if (colliding) {
+    thread.push({kind: 'loading', sortTs: Date.now() + 1, id: 'inline-loading'});
+  }
+
   // ── Stage change handler ──────────────────────────────────────────────────
   const changeStage = useCallback(
     async (newStage: Stage) => {
@@ -576,14 +630,70 @@ export default function ProblemDetailScreen() {
     }
   }, [noteText, savingNote, problemId]);
 
+  const handleInlineCollide = useCallback(async () => {
+    if (!problem || colliding) {return;}
+    const user = auth().currentUser;
+    if (!user) {return;}
+    setColliding(true);
+    setCollideError(null);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${BACKEND_URL}/collide`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          problem:             problem.problem,
+          mode:                collideMode,
+          workspaceProblemId:  problemId,
+        }),
+      });
+      if (res.status === 429) {
+        const b = await res.json().catch(() => ({}));
+        setCollideError(
+          b?.error === 'limit_exceeded'
+            ? 'Monthly limit reached. Upgrade to continue.'
+            : 'Too many requests.',
+        );
+        return;
+      }
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}));
+        setCollideError(b?.error ?? `Server error ${res.status}`);
+        return;
+      }
+      const body = await res.json();
+      const newDoc: CollisionDoc = {
+        id:        body.id,
+        problem:   problem.problem,
+        result:    body.result,
+        timestamp: new Date(),
+        mode:      collideMode,
+      };
+      setCollisionDocs(prev => [...prev, newDoc]);
+      // Persist collision ID so thread rebuilds correctly on re-visit
+      await firestore()
+        .collection('problems')
+        .doc(user.uid)
+        .collection('items')
+        .doc(problemId)
+        .update({
+          collisionIds: firestore.FieldValue.arrayUnion(body.id),
+        });
+      setTimeout(() => flatListRef.current?.scrollToEnd({animated: true}), 150);
+    } catch (e: any) {
+      setCollideError(e?.message ?? 'Something went wrong');
+    } finally {
+      setColliding(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [problem, problemId, collideMode, colliding]);
+
   const handleCollideAgain = useCallback(() => {
-    if (!problem) {return;}
-    // Navigate to Main tabs → Home tab with pre-filled problem text
-    (navigation as any).navigate('Main', {
-      screen: 'Home',
-      params: {prefillProblem: problem.problem},
-    });
-  }, [navigation, problem]);
+    // retained for external use only — not used by action bar
+  }, []);
 
   const handlePressCollision = useCallback(
     (doc: CollisionDoc) => {
@@ -683,10 +793,10 @@ export default function ProblemDetailScreen() {
   // ── FlatList footer ───────────────────────────────────────────────────────
   const ListFooter = (
     <View style={s.footer}>
-      {/* COLLIDE AGAIN */}
-      <TouchableOpacity style={s.collideAgainBtn} onPress={handleCollideAgain}>
-        <Text style={s.collideAgainText}>COLLIDE AGAIN</Text>
-      </TouchableOpacity>
+      {/* Inline collide error */}
+      {collideError !== null && (
+        <Text style={s.collideErrorText}>{collideError}</Text>
+      )}
 
       {/* ADD NOTE */}
       <TouchableOpacity
@@ -744,7 +854,7 @@ export default function ProblemDetailScreen() {
         </TouchableOpacity>
       )}
 
-      <View style={{height: 48}} />
+      <View style={{height: 16}} />
     </View>
   );
 
@@ -752,7 +862,7 @@ export default function ProblemDetailScreen() {
   const ListEmpty = (
     <View style={s.emptyThread}>
       <Text style={s.emptyThreadText}>No thread items yet.</Text>
-      <Text style={s.emptyThreadSub}>COLLIDE AGAIN to start a thread.</Text>
+      <Text style={s.emptyThreadSub}>Tap COLLIDE below to begin.</Text>
     </View>
   );
 
@@ -780,8 +890,11 @@ export default function ProblemDetailScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}>
         <FlatList
+          ref={flatListRef}
           data={thread}
-          keyExtractor={(item, idx) => `${item.kind}-${idx}`}
+          keyExtractor={(item, idx) =>
+            item.kind === 'loading' ? 'loading' : `${item.kind}-${idx}`
+          }
           renderItem={({item}) => (
             <ThreadRow item={item} onPressCollision={handlePressCollision} />
           )}
@@ -793,6 +906,48 @@ export default function ProblemDetailScreen() {
           contentContainerStyle={s.listContent}
           keyboardShouldPersistTaps="handled"
         />
+        {/* ── Fixed action bar (inside KAV so it moves with keyboard) ── */}
+        <View style={s.actionBar}>
+          {/* NOTE stub — Gap 5: floating note pill */}
+          <TouchableOpacity
+            onPress={() => {
+              setAddingNote(v => {
+                if (!v) {setTimeout(() => noteRef.current?.focus(), 80);}
+                return !v;
+              });
+              // TODO Gap 5: replace with floating note pill
+            }}>
+            <Text style={s.actionBarNote}>NOTE</Text>
+          </TouchableOpacity>
+
+          {/* Mode toggle: PROBLEM | CONCEPT | STORY */}
+          <View style={s.modeToggle}>
+            {(['core', 'learning', 'narrative'] as CollisionMode[]).map((m, i) => {
+              const labels = ['PROBLEM', 'CONCEPT', 'STORY'];
+              const active  = collideMode === m;
+              return (
+                <TouchableOpacity
+                  key={m}
+                  style={[s.modeSeg, active && s.modeSegActive]}
+                  onPress={() => setCollideMode(m)}
+                  activeOpacity={0.8}>
+                  <Text style={[s.modeSegText, active && s.modeSegTextActive]}>
+                    {labels[i]}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* COLLIDE button */}
+          <TouchableOpacity
+            style={[s.collideBtn, colliding && s.collideBtnBusy]}
+            onPress={handleInlineCollide}
+            disabled={colliding}
+            activeOpacity={0.8}>
+            <Text style={s.collideBtnText}>COLLIDE</Text>
+          </TouchableOpacity>
+        </View>
       </KeyboardAvoidingView>
 
       {/* ── Stage picker bottom sheet ── */}
@@ -1175,5 +1330,84 @@ const s = StyleSheet.create({
     paddingVertical:   6,
     borderWidth:     1,
     borderColor:     '#222222',
+  },
+
+  // ── Action bar ──
+  actionBar: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    height:            60,
+    paddingHorizontal: 16,
+    backgroundColor:   C.surface,
+    borderTopWidth:    1,
+    borderTopColor:    C.border,
+    gap:               10,
+  },
+  actionBarNote: {
+    fontFamily:    'monospace',
+    fontSize:      9,
+    letterSpacing: 2,
+    color:         C.muted,
+    textTransform: 'uppercase',
+  },
+  modeToggle: {
+    flex:          1,
+    flexDirection: 'row',
+  },
+  modeSeg: {
+    flex:           1,
+    alignItems:     'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  modeSegActive: {
+    backgroundColor: C.accent,
+  },
+  modeSegText: {
+    fontFamily:    'monospace',
+    fontSize:      8,
+    letterSpacing: 1,
+    color:         C.muted,
+    textTransform: 'uppercase',
+  },
+  modeSegTextActive: {
+    color: '#0a0a0a',
+  },
+  collideBtn: {
+    width:          100,
+    height:         40,
+    alignItems:     'center',
+    justifyContent: 'center',
+    backgroundColor: C.accent,
+  },
+  collideBtnBusy: {
+    opacity: 0.6,
+  },
+  collideBtnText: {
+    fontFamily:    'monospace',
+    fontSize:      11,
+    fontWeight:    '600',
+    letterSpacing: 3,
+    color:         '#0a0a0a',
+    textTransform: 'uppercase',
+  },
+
+  // ── Inline collide error ──
+  collideErrorText: {
+    fontFamily:        'monospace',
+    fontSize:          10,
+    color:             C.accentRed,
+    paddingVertical:   8,
+    paddingHorizontal: 0,
+    marginBottom:      8,
+  },
+
+  // ── Narrative domain line (inside collision thread card) ──
+  narrativeDomainLine: {
+    fontFamily:    'monospace',
+    fontSize:      9,
+    letterSpacing: 1.5,
+    color:         C.mutedLight,
+    marginBottom:  10,
   },
 });
