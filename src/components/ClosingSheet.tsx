@@ -20,6 +20,17 @@ import {
 import {auth, firestore} from '../services/firebase';
 import type {Stage} from './StagePicker';
 
+// ── Key insight card data passed from the screen ──────────────────────────────
+export interface KeyInsightCardData {
+  kiKey:       string;   // "collisionId-cardIndex"
+  collisionId: string;
+  cardIndex:   number;
+  domain:      string;
+  title:       string;
+  accentColor: string;   // index-based accent
+  domainColor: string;   // category-based color
+}
+
 // ── Closing types ─────────────────────────────────────────────────────────────
 type ClosingType = 'landed' | 'still_open' | 'let_it_go' | 'transformed';
 
@@ -40,11 +51,12 @@ const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
-  visible:      boolean;
-  targetStage:  Stage;   // 'clear' | 'let go'
-  problemId:    string;
-  onClose:      () => void;
-  onSaved:      () => void;
+  visible:          boolean;
+  targetStage:      Stage;   // 'clear' | 'let go'
+  problemId:        string;
+  keyInsightCards?: KeyInsightCardData[];
+  onClose:          () => void;
+  onSaved:          () => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -52,14 +64,16 @@ export default function ClosingSheet({
   visible,
   targetStage,
   problemId,
+  keyInsightCards,
   onClose,
   onSaved,
 }: Props) {
-  const [selected,    setSelected]    = useState<ClosingType | null>(null);
-  const [note,        setNote]        = useState('');
-  const [saving,      setSaving]      = useState(false);
-  const [error,       setError]       = useState<string | null>(null);
-  const [noteFocused, setNoteFocused] = useState(false);
+  const [selected,        setSelected]        = useState<ClosingType | null>(null);
+  const [primaryInsight,  setPrimaryInsight]   = useState<string | null>(null);
+  const [note,            setNote]            = useState('');
+  const [saving,          setSaving]          = useState(false);
+  const [error,           setError]           = useState<string | null>(null);
+  const [noteFocused,     setNoteFocused]     = useState(false);
 
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const noteRef   = useRef<TextInput>(null);
@@ -68,6 +82,7 @@ export default function ClosingSheet({
   useEffect(() => {
     if (visible) {
       setSelected(null);
+      setPrimaryInsight(null);
       setNote('');
       setError(null);
       setSaving(false);
@@ -111,6 +126,10 @@ export default function ClosingSheet({
       const snap = await ref.get();
       const prevStage = snap.data()?.stage ?? 'resting';
 
+      const selectedCard = primaryInsight
+        ? (keyInsightCards ?? []).find(c => c.kiKey === primaryInsight)
+        : undefined;
+
       await ref.update({
         stage:        targetStage,
         closingType:  selected,
@@ -120,6 +139,14 @@ export default function ClosingSheet({
           from: prevStage,
           to:   targetStage,
           at:   new Date().toISOString(),
+        }),
+        ...(selectedCard && {
+          closingPrimaryInsight: {
+            collisionId: selectedCard.collisionId,
+            cardIndex:   selectedCard.cardIndex,
+            domain:      selectedCard.domain,
+            title:       selectedCard.title,
+          },
         }),
       });
 
@@ -169,6 +196,56 @@ export default function ClosingSheet({
 
             {/* Header */}
             <Text style={s.header}>HOW DID THIS END?</Text>
+
+            {/* WHICH INSIGHT MOVED YOU MOST — only when key insights exist */}
+            {keyInsightCards && keyInsightCards.length > 0 && (
+              <>
+                <View style={s.insightSectionRow}>
+                  <View style={s.insightLine} />
+                  <Text style={s.insightSectionLabel}>WHICH INSIGHT MOVED YOU MOST?</Text>
+                  <View style={s.insightLine} />
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={s.insightScroll}
+                  contentContainerStyle={s.insightScrollContent}>
+                  {keyInsightCards.map(card => {
+                    const isSelected = primaryInsight === card.kiKey;
+                    const truncTitle = card.title.length > 40
+                      ? card.title.slice(0, 40) + '\u2026'
+                      : card.title;
+                    return (
+                      <TouchableOpacity
+                        key={card.kiKey}
+                        style={[
+                          s.insightCard,
+                          {borderLeftColor: isSelected ? '#c8f064' : card.accentColor},
+                          isSelected && s.insightCardSelected,
+                        ]}
+                        onPress={() =>
+                          setPrimaryInsight(prev =>
+                            prev === card.kiKey ? null : card.kiKey,
+                          )
+                        }
+                        activeOpacity={0.75}>
+                        <Text style={[s.insightStar, isSelected && s.insightStarSelected]}>
+                          {isSelected ? '\u2713' : '\u2605'}
+                        </Text>
+                        <Text
+                          style={[s.insightDomain, {color: card.domainColor}]}
+                          numberOfLines={1}>
+                          {card.domain.toUpperCase()}
+                        </Text>
+                        <Text style={s.insightTitle} numberOfLines={2}>
+                          {truncTitle}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
 
             {/* Closing type options */}
             {CLOSING_OPTIONS.map(opt => {
@@ -351,6 +428,67 @@ const s = StyleSheet.create({
     color:           '#f06464',
     paddingHorizontal: 24,
     paddingTop:      6,
+  },
+
+  // ── WHICH INSIGHT section ─────────────────────────────────────────────────
+  insightSectionRow: {
+    flexDirection:     'row',
+    alignItems:        'center',
+    paddingHorizontal: 24,
+    marginTop:         20,
+    marginBottom:      12,
+  },
+  insightLine: {
+    flex:            1,
+    height:          1,
+    backgroundColor: '#222222',
+  },
+  insightSectionLabel: {
+    fontFamily:       'monospace',
+    fontSize:         9,
+    letterSpacing:    2,
+    color:            '#888880',
+    textTransform:    'uppercase',
+    paddingHorizontal: 10,
+  },
+  insightScroll: {
+    marginBottom: 12,
+  },
+  insightScrollContent: {
+    paddingHorizontal: 24,
+    gap:              8,
+    paddingVertical:  4,
+  },
+  insightCard: {
+    backgroundColor: '#0a0a0a',
+    borderLeftWidth: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    width:          140,
+  },
+  insightCardSelected: {
+    backgroundColor: '#0f0f0f',
+  },
+  insightStar: {
+    fontFamily:  'monospace',
+    fontSize:    11,
+    color:       '#c8f064',
+    marginBottom: 3,
+  },
+  insightStarSelected: {
+    color: '#c8f064',
+  },
+  insightDomain: {
+    fontFamily:    'monospace',
+    fontSize:      9,
+    letterSpacing: 1.5,
+    marginBottom:  4,
+  },
+  insightTitle: {
+    fontFamily: 'monospace',
+    fontSize:   11,
+    color:      '#e8e8e0',
+    lineHeight: 16,
   },
 
   // Save button

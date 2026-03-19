@@ -872,6 +872,23 @@ export default function ProblemDetailScreen() {
     });
   };
 
+  // Key insight cards array — passed to ClosingSheet for ritual selection
+  const keyInsightCards = Array.from(keyInsights)
+    .map(kiKey => {
+      const data = kiKeyData.get(kiKey);
+      if (!data) {return null;}
+      return {
+        kiKey,
+        collisionId: data.collisionId,
+        cardIndex:   data.cardIndex,
+        domain:      data.domain,
+        title:       data.title,
+        accentColor: CARD_ACCENT_COLORS[data.cardIndex] ?? C.accent,
+        domainColor: CATEGORY_COLORS[domainCategory(data.domain)] ?? C.label,
+      };
+    })
+    .filter((c): c is NonNullable<typeof c> => c !== null);
+
   // ── FlatList header ───────────────────────────────────────────────────────
   const ListHeader = (
     <>
@@ -1127,6 +1144,7 @@ export default function ProblemDetailScreen() {
         visible={closingSheetVisible}
         targetStage={closingTargetStage}
         problemId={problemId}
+        keyInsightCards={keyInsightCards}
         onClose={() => setClosingSheetVisible(false)}
         onSaved={handleSaved}
       />
