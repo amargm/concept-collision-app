@@ -286,7 +286,9 @@ function CollisionThreadCard({
       : [];
 
   const dateStr  = formatThreadDate(doc.timestamp);
-  const modeStr  = doc.mode && doc.mode !== 'core' ? `  ·  ${doc.mode.toUpperCase()} MODE` : '';
+  const MODE_LABELS: Record<string, string> = {learning: 'CONCEPT', narrative: 'STORY'};
+  const modeLabel = doc.mode && doc.mode !== 'core' ? MODE_LABELS[doc.mode] ?? doc.mode.toUpperCase() : '';
+  const modeStr  = modeLabel ? `  ·  ${modeLabel} MODE` : '';
   const groupNum = String(collisionIndex + 1);
 
   return (
@@ -1292,7 +1294,7 @@ const s = StyleSheet.create({
   collisionGroupLabel: {
     fontFamily:    'monospace',
     fontSize:      10,
-    color:         '#333333',
+    color:         C.label,
     letterSpacing: 0.5,
     flexShrink:    1,
   },
