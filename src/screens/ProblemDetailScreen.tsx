@@ -121,7 +121,10 @@ interface ProblemDoc {
   collisionCount: number;
   collisionIds: string[];
   domains: string[];
+  keyInsights: string[];   // e.g. ["abc123-0", "abc123-2"]
   createdAt: any;
+  noteCount?: number;
+  keyInsightCount?: number;
 }
 
 interface CollisionDoc {
@@ -146,7 +149,7 @@ interface StageEventDoc {
 }
 
 type ThreadItem =
-  | {kind: 'collision';    sortTs: number; doc: CollisionDoc}
+  | {kind: 'collision';    sortTs: number; doc: CollisionDoc; collisionIndex: number}
   | {kind: 'note';         sortTs: number; doc: NoteDoc}
   | {kind: 'stage_change'; sortTs: number; doc: StageEventDoc}
   | {kind: 'loading';      sortTs: number; id: string};
@@ -258,13 +261,15 @@ function CompactDomainCard({
   );
 }
 
-// ── Thread item: COLLISION ────────────────────────────────────────────────────
+// ── Thread item: COLLISION GROUP ─────────────────────────────────────────────
 function CollisionThreadCard({
   doc,
+  collisionIndex,
   keyInsights,
   onToggleKeyInsight,
 }: {
   doc: CollisionDoc;
+  collisionIndex: number;
   keyInsights: Set<string>;
   onToggleKeyInsight: (key: string) => void;
 }) {
@@ -274,34 +279,41 @@ function CollisionThreadCard({
       ? (doc.result?.narratives?.map(n => n.domain) ?? [])
       : [];
 
-  const modePart = doc.mode && doc.mode !== 'core' ? ` · ${doc.mode.toUpperCase()} MODE` : '';
-  const metaLabel = `COLLISION${modePart} · ${formatThreadDate(doc.timestamp)}`;
+  const dateStr  = formatThreadDate(doc.timestamp);
+  const modeStr  = doc.mode && doc.mode !== 'core' ? `  ·  ${doc.mode.toUpperCase()} MODE` : '';
+  const groupNum = String(collisionIndex + 1);
 
   return (
-    <View style={s.collisionCard}>
-      <View style={[s.collisionBar, {backgroundColor: C.accent}]} />
-      <View style={s.collisionCardContent}>
-        <Text style={s.threadMetaLabel}>{metaLabel}</Text>
-        {cols.length > 0
-          ? cols.map((col, i) => {
-              const kiKey = `${doc.id}-${i}`;
-              return (
-                <ThreadCollisionCard
-                  key={kiKey}
-                  card={col}
-                  cardIndex={i}
-                  isKeyInsight={keyInsights.has(kiKey)}
-                  onMarkKeyInsight={() => onToggleKeyInsight(kiKey)}
-                  onRemoveKeyInsight={() => onToggleKeyInsight(kiKey)}
-                />
-              );
-            })
-          : narrativeDomains.length > 0 ? (
-              <Text style={s.narrativeDomainLine}>
-                {narrativeDomains.join(' · ')}
-              </Text>
-            ) : null}
+    <View style={s.collisionGroup}>
+      {/* ── Header row ─────────────────────────────────────────────── */}
+      <View style={s.collisionGroupHeader}>
+        <View style={s.headerLine} />
+        <Text style={s.collisionGroupLabel} numberOfLines={1}>
+          {`  ${dateStr}  COLLISION ${groupNum}${modeStr}  `}
+        </Text>
+        <View style={s.headerLine} />
       </View>
+
+      {/* ── 4 ThreadCollisionCards ──────────────────────────────────── */}
+      {cols.length > 0
+        ? cols.map((col, i) => {
+            const kiKey = `${doc.id}-${i}`;
+            return (
+              <ThreadCollisionCard
+                key={kiKey}
+                card={col}
+                cardIndex={i}
+                isKeyInsight={keyInsights.has(kiKey)}
+                onMarkKeyInsight={() => onToggleKeyInsight(kiKey)}
+                onRemoveKeyInsight={() => onToggleKeyInsight(kiKey)}
+              />
+            );
+          })
+        : narrativeDomains.length > 0 ? (
+            <Text style={s.narrativeDomainLine}>
+              {narrativeDomains.join(' · ')}
+            </Text>
+          ) : null}
     </View>
   );
 }
@@ -355,6 +367,7 @@ function ThreadRow({
     return (
       <CollisionThreadCard
         doc={item.doc}
+        collisionIndex={item.collisionIndex}
         keyInsights={keyInsights}
         onToggleKeyInsight={onToggleKeyInsight}
       />
@@ -428,15 +441,24 @@ export default function ProblemDetailScreen() {
           }
           const data = snap.data() ?? {};
           setProblem({
-            id:             snap.id,
-            problem:        data.problem        ?? '',
-            stage:          (data.stage as Stage) ?? 'waiting',
-            source:         data.source         ?? 'queued',
-            collisionCount: data.collisionCount ?? 0,
-            collisionIds:   data.collisionIds   ?? [],
-            domains:        data.domains        ?? [],
-            createdAt:      data.createdAt,
+            id:                snap.id,
+            problem:           data.problem        ?? '',
+            stage:             (data.stage as Stage) ?? 'waiting',
+            source:            data.source         ?? 'queued',
+            collisionCount:    data.collisionCount ?? 0,
+            collisionIds:      data.collisionIds   ?? [],
+            domains:           data.domains        ?? [],
+            keyInsights:       data.keyInsights    ?? [],
+            noteCount:         data.noteCount      ?? 0,
+            keyInsightCount:   data.keyInsightCount ?? 0,
+            createdAt:         data.createdAt,
           });
+          // Seed key-insight state from Firestore on first load only
+          setKeyInsights(prev =>
+            prev.size === 0 && data.keyInsights?.length
+              ? new Set<string>(data.keyInsights as string[])
+              : prev,
+          );
           setLoadingProblem(false);
         },
         () => setLoadingProblem(false),
@@ -473,6 +495,7 @@ export default function ProblemDetailScreen() {
               problem:   d.problem ?? '',
               result:    d.result  ?? {structural_essence: '', collisions: [], synthesis: ''},
               timestamp: d.timestamp,
+              mode:      d.mode ?? 'core',
             };
           });
         setCollisionDocs(docs);
@@ -542,6 +565,7 @@ export default function ProblemDetailScreen() {
       kind:   'collision' as const,
       sortTs: tsToMs(doc.timestamp),
       doc,
+      collisionIndex: 0, // assigned below after sort
     })),
     ...notes.map(doc => ({
       kind:   'note' as const,
@@ -554,6 +578,14 @@ export default function ProblemDetailScreen() {
       doc,
     })),
   ].sort((a, b) => a.sortTs - b.sortTs);
+
+  // Assign sequential collisionIndex to collision items
+  let collisionIndexCounter = 0;
+  for (const item of thread) {
+    if (item.kind === 'collision') {
+      item.collisionIndex = collisionIndexCounter++;
+    }
+  }
 
   // Append inline loading sentinel when a collide is in-flight
   if (colliding) {
@@ -702,12 +734,39 @@ export default function ProblemDetailScreen() {
   }, []);
 
   const toggleKeyInsight = useCallback((key: string) => {
+    // Optimistic local update
     setKeyInsights(prev => {
-      const s = new Set(prev);
-      if (s.has(key)) { s.delete(key); } else { s.add(key); }
-      return s;
+      const next = new Set(prev);
+      if (next.has(key)) { next.delete(key); } else { next.add(key); }
+      // Background Firestore write
+      const user = auth().currentUser;
+      if (user) {
+        const ref = firestore()
+          .collection('problems')
+          .doc(user.uid)
+          .collection('items')
+          .doc(problemId);
+        const adding = !prev.has(key);
+        const newKeys = adding
+          ? [...Array.from(prev), key]
+          : Array.from(prev).filter(k => k !== key);
+        const keyInsightCount = newKeys.length;
+        // Read current collisionCount + noteCount from latest problem state
+        ref.get().then(snap => {
+          const d = snap.data() ?? {};
+          const collisionCount = d.collisionCount ?? 0;
+          const noteCount = d.noteCount ?? 0;
+          const engagementScore = collisionCount + (noteCount * 0.5) + keyInsightCount;
+          ref.update({
+            keyInsights:      newKeys,
+            keyInsightCount,
+            engagementScore,
+          });
+        }).catch(() => {/* non-fatal */});
+      }
+      return next;
     });
-  }, []);
+  }, [problemId]);
 
   // ── Collect all unique domains across collision docs ──────────────────────
   const allDomains: string[] = [];
@@ -1125,6 +1184,29 @@ const s = StyleSheet.create({
   },
   collisionCardContent: {
     padding: 14,
+  },
+
+  // ── Collision group (new design) ──
+  collisionGroup: {
+    marginHorizontal: 24,
+    marginBottom:     16,
+  },
+  collisionGroupHeader: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    marginBottom:   10,
+  },
+  headerLine: {
+    flex:            1,
+    height:          1,
+    backgroundColor: '#222222',
+  },
+  collisionGroupLabel: {
+    fontFamily:    'monospace',
+    fontSize:      10,
+    color:         '#333333',
+    letterSpacing: 0.5,
+    flexShrink:    1,
   },
   threadMetaLabel: {
     fontFamily:    'monospace',
