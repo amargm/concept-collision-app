@@ -136,7 +136,7 @@ Rules:
 
 router.post('/', verifyAuth, async (req, res) => {
   const uid = req.user.uid;
-  const { problem, mode = 'core', domain, structuralEssence } = req.body;
+  const { problem, mode = 'core', domain, structuralEssence, workspaceProblemId } = req.body;
 
   if (!problem || typeof problem !== 'string' || problem.trim().length === 0) {
     return res.status(400).json({ error: 'problem_required' });
@@ -242,6 +242,55 @@ router.post('/', verifyAuth, async (req, res) => {
   await userRef.update({
     collisionCount: admin.firestore.FieldValue.increment(1),
   });
+
+  // ── Workspace attribution ──────────────────────────────────────────────────
+  if (workspaceProblemId && typeof workspaceProblemId === 'string' && workspaceProblemId.trim()) {
+    const problemRef = db
+      .collection('problems')
+      .doc(uid)
+      .collection('items')
+      .doc(workspaceProblemId.trim());
+
+    try {
+      const problemSnap = await problemRef.get();
+      if (problemSnap.exists) {
+        const pd = problemSnap.data();
+
+        const collisionEntry = {
+          collisionId: collisionRef.id,
+          timestamp: admin.firestore.Timestamp.now(),
+          mode,
+          domains: domainList,
+          keyInsightCardIds: [],
+        };
+
+        const newCollisionCount = (pd.collisionCount || 0) + 1;
+        const noteCount = pd.noteCount || 0;
+        const keyInsightCount = pd.keyInsightCount || 0;
+        const engagementScore = newCollisionCount + (noteCount * 0.5) + keyInsightCount;
+
+        const categoryUpdate = {};
+        for (const domainName of domainList) {
+          const safeKey = domainName.replace(/[^a-zA-Z0-9]/g, '_');
+          categoryUpdate[`coverageByCategory.${safeKey}`] = admin.firestore.FieldValue.increment(1);
+        }
+
+        const stageUpdate = pd.stage === 'waiting' ? { stage: 'thinking' } : {};
+
+        await problemRef.update({
+          collisions: admin.firestore.FieldValue.arrayUnion(collisionEntry),
+          collisionCount: admin.firestore.FieldValue.increment(1),
+          lastCollidedAt: admin.firestore.FieldValue.serverTimestamp(),
+          engagementScore,
+          ...stageUpdate,
+          ...categoryUpdate,
+        });
+      }
+    } catch (err) {
+      // Non-fatal — attribution failure must not break the collision response
+      console.error('Workspace attribution failed', err);
+    }
+  }
 
   return res.json({ id: collisionRef.id, result });
 });
