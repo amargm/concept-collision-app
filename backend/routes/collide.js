@@ -292,6 +292,16 @@ router.post('/', verifyAuth, async (req, res) => {
     }
   }
 
+  // ── Search index: history (non-fatal, fire-and-forget) ────────────────────
+  db.collection('search_index').doc(uid).set({
+    historyIndex: admin.firestore.FieldValue.arrayUnion({
+      collisionId:  collisionRef.id,
+      problemText:  problem.trim(),
+      domains:      domainList,
+      timestamp:    admin.firestore.Timestamp.now(),
+    }),
+  }, { merge: true }).catch(err => console.error('historyIndex write failed', err));
+
   return res.json({ id: collisionRef.id, result });
 });
 
